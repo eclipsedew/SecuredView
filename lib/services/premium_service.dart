@@ -33,32 +33,7 @@ class PremiumService extends ChangeNotifier {
     }
   }
 
-  /// Purchase premium — ONLY via backend. No simulated fallback.
-  Future<bool> purchasePremium(String planId, String accountId, {ApiService? api}) async {
-    _isLoading = true;
-    _error = null;
-    notifyListeners();
-
-    if (api != null && api.isAuthenticated) {
-      try {
-        final result = await api.purchasePremium(planId: planId);
-        _isLoading = false;
-        notifyListeners();
-        if (result.success) return true;
-        _error = result.message;
-        notifyListeners();
-        return false;
-      } catch (e) {
-        _error = 'Purchase failed. Please check your connection and try again.';
-      }
-    } else {
-      _error = 'Not connected to server. Please check your connection.';
-    }
-
-    _isLoading = false;
-    notifyListeners();
-    return false;
-  }
+  // Purchase premium via Paystack only — use PaystackService + PaystackPaymentScreen
 
   Future<bool> restorePurchases(String accountId, {ApiService? api}) async {
     _isLoading = true;

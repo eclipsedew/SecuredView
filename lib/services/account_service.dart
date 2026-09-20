@@ -141,37 +141,6 @@ class AccountService extends ChangeNotifier {
     }
   }
 
-  /// Upgrade to premium — ONLY via backend. No local fallback.
-  Future<bool> upgradeToPremium(int days) async {
-    if (_account == null) return false;
-
-    try {
-      final planId = _planIdForDays(days);
-      final result = await _api.purchasePremium(planId: planId);
-      if (result.success) {
-        _account = _account!.copyWith(
-          tier: SubscriptionTier.premium,
-          premiumExpiry: result.expiresAt,
-        );
-        _error = null;
-        await _saveAccountLocal(await SharedPreferences.getInstance());
-        notifyListeners();
-        return true;
-      }
-      _error = result.message;
-    } catch (e) {
-      _error = 'Purchase failed. Please check your connection.';
-    }
-    notifyListeners();
-    return false;
-  }
-
-  String _planIdForDays(int days) {
-    if (days <= 30) return 'basic_30';
-    if (days <= 60) return 'standard_60';
-    return 'premium_90';
-  }
-
   /// Sync premium status with backend.
   Future<void> syncPremiumStatus() async {
     if (!_api.isAuthenticated || _account == null) return;

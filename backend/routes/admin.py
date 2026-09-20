@@ -1,14 +1,18 @@
 """Admin routes for managing accounts, servers, and stats."""
+import secrets as _secrets
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import func
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from database import get_db
 from models import Account, Device, Server, Subscription
 from schemas import ServerStats, AdminLogin, TokenResponse, AccountInfo
 from auth import verify_admin, create_access_token, require_auth_or_admin
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
+limiter = Limiter(key_func=get_remote_address)
 
 
 def _require_admin(auth=Depends(require_auth_or_admin)):
@@ -18,11 +22,38 @@ def _require_admin(auth=Depends(require_auth_or_admin)):
     raise HTTPException(status_code=403, detail="Admin access required")
 
 
+# Admin login brute-force tracking
+_admin_failed_logins: dict[str, list[float]] = {}
+ADMIN_MAX_ATTEMPTS = 5
+ADMIN_LOCKOUT_SECONDS = 600  # 10 minutes
+
+
+def _admin_is_locked_out(username: str) -> bool:
+    now = datetime.now(timezone.utc).timestamp()
+    attempts = _admin_failed_logins.get(username, [])
+    attempts = [t for t in attempts if now - t < ADMIN_LOCKOUT_SECONDS]
+    _admin_failed_logins[username] = attempts
+    return len(attempts) >= ADMIN_MAX_ATTEMPTS
+
+
+def _admin_record_failed(username: str):
+    now = datetime.now(timezone.utc).timestamp()
+    _admin_failed_logins.setdefault(username, []).append(now)
+
+
 @router.post("/login", response_model=TokenResponse)
-def admin_login(req: AdminLogin):
-    """Admin login (uses a separate admin credential, not a regular account)."""
+@limiter.limit("5/minute")
+def admin_login(request: Request, req: AdminLogin):
+    """Admin login with brute-force protection."""
+    if _admin_is_locked_out(req.username):
+        raise HTTPException(status_code=429, detail="Too many attempts. Try again later.")
+
     if not verify_admin(req.username, req.password):
+        _admin_record_failed(req.username)
         raise HTTPException(status_code=401, detail="Invalid admin credentials")
+
+    # Clear on success
+    _admin_failed_logins.pop(req.username, None)
     token = create_access_token("__admin__")
     return TokenResponse(
         access_token=token,

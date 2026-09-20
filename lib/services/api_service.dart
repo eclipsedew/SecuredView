@@ -219,23 +219,6 @@ class ApiService {
     return list.map((p) => PlanData.fromJson(p)).toList();
   }
 
-  Future<PurchaseResult> purchasePremium({
-    required String planId,
-    String paymentMethod = 'simulated',
-  }) async {
-    final resp = await _httpClient.post(
-      _uri('/api/premium/purchase'),
-      headers: _headers,
-      body: jsonEncode({'plan_id': planId, 'payment_method': paymentMethod}),
-    );
-    final data = await _handleResponse(resp);
-    return PurchaseResult(
-      success: data['success'] ?? false,
-      message: data['message'] ?? '',
-      expiresAt: data['expires_at'] != null ? DateTime.tryParse(data['expires_at']) : null,
-    );
-  }
-
   Future<PremiumStatus> getPremiumStatus() async {
     final resp = await _httpClient.get(_uri('/api/premium/status'), headers: _headers);
     final data = await _handleResponse(resp);
@@ -382,13 +365,6 @@ class PlanData {
 
   String get priceDisplay =>
       '\$${price.toStringAsFixed(price.truncateToDouble() == price ? 0 : 2)}';
-}
-
-class PurchaseResult {
-  final bool success;
-  final String message;
-  final DateTime? expiresAt;
-  PurchaseResult({required this.success, required this.message, this.expiresAt});
 }
 
 class PremiumStatus {
