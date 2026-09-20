@@ -16,44 +16,55 @@ bool FlutterWindow::OnCreate() {
 
   RECT frame = GetClientArea();
 
-  flutter_view_ = std::make_unique<flutter::FlutterViewController>(
+  // The size here must match the window dimensions to avoid unnecessary surface
+  // creation / destruction in the startup path.
+  flutter_controller_ = std::make_unique<flutter::FlutterViewController>(
       frame.right - frame.left, frame.bottom - frame.top, project_);
-  if (!flutter_view_->engine() || !flutter_view_->engine()->run()) {
+  // Ensure that basic setup of the controller was successful.
+  if (!flutter_controller_->engine() || !flutter_controller_->view()) {
     return false;
   }
-  RegisterPlugins(flutter_view_->engine());
-  SetChildContent(flutter_view_->GetNativeWindow());
+  RegisterPlugins(flutter_controller_->engine());
+  SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
-  flutter_view_->ForceSoftwareRasterization();
+  flutter_controller_->engine()->SetNextFrameCallback([&]() {
+    this->Show();
+  });
+
+  // Flutter can complete the first frame before the "show window" callback is
+  // registered. The following call ensures a frame is pending to ensure the
+  // window is shown. It is a no-op if the first frame hasn't completed yet.
+  flutter_controller_->ForceRedraw();
+
   return true;
 }
 
 void FlutterWindow::OnDestroy() {
-  if (flutter_view_) {
-    flutter_view_ = nullptr;
+  if (flutter_controller_) {
+    flutter_controller_ = nullptr;
   }
 
   Win32Window::OnDestroy();
 }
 
 LRESULT
-FlutterWindow::MessageHandler(HWND hwnd, UINT const message, WPARAM const wparam,
+FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
+                              WPARAM const wparam,
                               LPARAM const lparam) noexcept {
-  if (flutter_view_) {
+  // Give Flutter, including plugins, an opportunity to handle window messages.
+  if (flutter_controller_) {
     std::optional<LRESULT> result =
-        flutter_view_->HandleTopLevelWindowProc(hwnd, message, wparam, lparam);
+        flutter_controller_->HandleTopLevelWindowProc(hwnd, message, wparam,
+                                                      lparam);
     if (result) {
       return *result;
     }
   }
 
   switch (message) {
-    case WM_FONTCHANGE: {
-      if (flutter_view_) {
-        flutter_view_->engine()->ReloadSystemFonts();
-      }
+    case WM_FONTCHANGE:
+      flutter_controller_->engine()->ReloadSystemFonts();
       break;
-    }
   }
 
   return Win32Window::MessageHandler(hwnd, message, wparam, lparam);
