@@ -90,7 +90,7 @@ PREMIUM_PLANS = {
 PAYSTACK_CURRENCY = "GHS"
 
 # Approximate USD to GHS rate (update periodically or use an API)
-USD_TO_GHS = 15.5
+USD_TO_GHS = 11.65
 
 FREE_MAX_DEVICES = 1
 PREMIUM_MAX_DEVICES = 3
