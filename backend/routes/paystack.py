@@ -4,7 +4,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from database import get_db
-from models import Account, Subscription, PREMIUM_PLANS
+from models import Account, Subscription, PREMIUM_PLANS, PAYSTACK_CURRENCY, USD_TO_GHS
 from auth import get_current_account
 from pydantic import BaseModel
 from typing import Optional
@@ -49,7 +49,7 @@ class VerifyResponse(BaseModel):
 
 
 @router.post("/initialize", response_model=InitializeResponse)
-async def initialize_payment(
+def initialize_payment(
     req: InitializeRequest,
     account: Account = Depends(get_current_account),
 ):
@@ -61,13 +61,13 @@ async def initialize_payment(
     if not PAYSTACK_SECRET_KEY:
         raise HTTPException(status_code=500, detail="Payment gateway not configured")
 
-    # Amount in kobo (Paystack uses the smallest currency unit)
-    # USD amounts: convert to cents
-    amount_kobo = int(plan["price"] * 100)
+    # Convert USD to GHS for Paystack (merchant account is Ghanaian)
+    amount_ghs = plan["price"] * USD_TO_GHS
+    amount_pesewas = int(amount_ghs * 100)
     reference = f"SV-{secrets.token_hex(8).upper()}"
 
-    async with httpx.AsyncClient() as client:
-        resp = await client.post(
+    with httpx.Client() as client:
+        resp = client.post(
             f"{PAYSTACK_BASE_URL}/transaction/initialize",
             headers={
                 "Authorization": f"Bearer {PAYSTACK_SECRET_KEY}",
@@ -75,20 +75,14 @@ async def initialize_payment(
             },
             json={
                 "email": req.email,
-                "amount": amount_kobo,
+                "amount": amount_pesewas,
                 "reference": reference,
-                "currency": "USD",
-                "plan": req.plan_id,
+                "currency": PAYSTACK_CURRENCY,
                 "metadata": {
                     "account_id": account.id,
                     "plan_id": req.plan_id,
-                    "custom_fields": [
-                        {
-                            "display_name": "Account ID",
-                            "variable_name": "account_id",
-                            "value": account.id,
-                        }
-                    ],
+                    "amount_usd": plan["price"],
+                    "plan_name": plan["name"],
                 },
             },
         )
@@ -114,7 +108,7 @@ class VerifyRequest(BaseModel):
 
 
 @router.post("/verify", response_model=VerifyResponse)
-async def verify_payment(
+def verify_payment(
     req: VerifyRequest,
     account: Account = Depends(get_current_account),
     db: Session = Depends(get_db),
@@ -127,8 +121,8 @@ async def verify_payment(
     if not PAYSTACK_SECRET_KEY:
         raise HTTPException(status_code=500, detail="Payment gateway not configured")
 
-    async with httpx.AsyncClient() as client:
-        resp = await client.get(
+    with httpx.Client() as client:
+        resp = client.get(
             f"{PAYSTACK_BASE_URL}/transaction/verify/{req.reference}",
             headers={
                 "Authorization": f"Bearer {PAYSTACK_SECRET_KEY}",
@@ -156,8 +150,8 @@ async def verify_payment(
             plan_id=req.plan_id,
         )
 
-    # Check amount matches
-    expected_amount = int(plan["price"] * 100)
+    # Check amount matches (in pesewas, converted from USD)
+    expected_amount = int(plan["price"] * USD_TO_GHS * 100)
     if tx_data.get("amount") != expected_amount:
         return VerifyResponse(
             success=False,

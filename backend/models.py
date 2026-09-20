@@ -79,12 +79,18 @@ class Subscription(Base):
     account = relationship("Account", back_populates="subscriptions")
 
 
-# Premium plans config
+# Premium plans config (prices displayed in USD)
 PREMIUM_PLANS = {
     "basic_30": {"name": "Basic", "days": 30, "price": 3.99, "max_devices": 3},
     "standard_60": {"name": "Standard", "days": 60, "price": 7.00, "max_devices": 3},
     "premium_90": {"name": "Premium", "days": 90, "price": 13.00, "max_devices": 3},
 }
+
+# Currency for Paystack (must match merchant account)
+PAYSTACK_CURRENCY = "GHS"
+
+# Approximate USD to GHS rate (update periodically or use an API)
+USD_TO_GHS = 15.5
 
 FREE_MAX_DEVICES = 1
 PREMIUM_MAX_DEVICES = 3
