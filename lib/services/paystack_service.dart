@@ -8,18 +8,19 @@ class PaystackService {
 
   PaystackService(this._api);
 
+  Map<String, String> get _headers => {
+        'Content-Type': 'application/json',
+        'X-Api-Key': ApiService.appApiKey,
+        if (_api.isAuthenticated) 'Authorization': 'Bearer ${_api.token}',
+      };
+
   Future<PaystackInitResult> initializePayment({
     required String planId,
     required String email,
   }) async {
-    final resp = await http.post(
+    final resp = await _api.httpClient.post(
       Uri.parse('${_api.baseUrl}/api/paystack/initialize'),
-      headers: _api.isAuthenticated
-          ? {
-              'Content-Type': 'application/json',
-              'Authorization': 'Bearer ${_api.token}',
-            }
-          : {'Content-Type': 'application/json'},
+      headers: _headers,
       body: jsonEncode({'plan_id': planId, 'email': email}),
     );
 
@@ -40,12 +41,9 @@ class PaystackService {
     required String reference,
     required String planId,
   }) async {
-    final resp = await http.post(
+    final resp = await _api.httpClient.post(
       Uri.parse('${_api.baseUrl}/api/paystack/verify'),
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ${_api.token}',
-      },
+      headers: _headers,
       body: jsonEncode({'reference': reference, 'plan_id': planId}),
     );
 
