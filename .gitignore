@@ -19,6 +19,7 @@ windows/flutter/ephemeral/
 dist/
 backend/venv/
 backend/__pycache__/
+backend/**/__pycache__/
 backend/.jwt_secret
 backend/.admin_creds
 backend/securevpn.db

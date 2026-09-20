@@ -1,14 +1,15 @@
 cmake_minimum_required(VERSION 3.14)
 project(warp_vpn LANGUAGES CXX)
 
-set(BINARY_NAME "warp_vpn")
-set(APPLICATION_ID "com.warpvpn.app")
+set(BINARY_NAME "securedview")
+set(APPLICATION_ID "com.securedview.app")
 
 cmake_policy(SET CMP0063 NEW)
 
 set(CMAKE_INSTALL_RPATH "$ORIGIN/lib")
 set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
 
+set(FLUTTER_MANAGED_DIR "${CMAKE_CURRENT_SOURCE_DIR}/flutter")
 add_subdirectory(${FLUTTER_MANAGED_DIR})
 
 add_executable(${BINARY_NAME} WIN32
