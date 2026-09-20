@@ -32,7 +32,7 @@
       <nav class="nav" aria-label="Primary">
         <a href="/network.html" aria-current="page">Network</a>
         <a href="/apps.html">Apps</a>
-        <a href="/free.html">Why it is free</a>
+        <a href="/free.html">Pricing</a>
         <a href="/privacy.html">Privacy</a>
       </nav>
       <a class="btn btn-fill" href="/apps.html">Get SecuredView</a>
@@ -45,7 +45,7 @@
 <nav class="mnav" id="mnav" aria-label="Primary">
   <a href="/network.html" aria-current="page">Network</a>
   <a href="/apps.html">Apps</a>
-  <a href="/free.html">Why it is free</a>
+  <a href="/free.html">Pricing</a>
   <a href="/privacy.html">Privacy</a>
   <a class="btn btn-fill" href="/apps.html">Get SecuredView</a>
 </nav>
@@ -121,6 +121,8 @@
         </div>
       </div>
 
+      <p class="tier-note rv">Free servers are available to all users. Premium servers require a subscription starting at $3.99.</p>
+
       <div class="tscroll rv">
         <table class="tbl" id="locations">
           <thead>
@@ -129,11 +131,94 @@
               <th scope="col">City</th>
               <th scope="col">Country</th>
               <th scope="col">Region</th>
+              <th scope="col">Tier</th>
               <th scope="col">Nodes</th>
               <th scope="col">Gbit/s</th>
             </tr>
           </thead>
-          <tbody></tbody>
+          <tbody>
+            <tr>
+              <td><code>NYC</code></td>
+              <td>New York</td>
+              <td>United States</td>
+              <td data-region="AM">Americas</td>
+              <td><span class="tier-free">Free</span></td>
+              <td>120</td>
+              <td>1.2</td>
+            </tr>
+            <tr>
+              <td><code>NRT</code></td>
+              <td>Tokyo</td>
+              <td>Japan</td>
+              <td data-region="AP">Asia Pacific</td>
+              <td><span class="tier-free">Free</span></td>
+              <td>95</td>
+              <td>1.0</td>
+            </tr>
+            <tr>
+              <td><code>SFO</code></td>
+              <td>San Francisco</td>
+              <td>United States</td>
+              <td data-region="AM">Americas</td>
+              <td><span class="tier-premium">Premium</span></td>
+              <td>180</td>
+              <td>2.0</td>
+            </tr>
+            <tr>
+              <td><code>LHR</code></td>
+              <td>London</td>
+              <td>United Kingdom</td>
+              <td data-region="EU">Europe</td>
+              <td><span class="tier-premium">Premium</span></td>
+              <td>150</td>
+              <td>1.8</td>
+            </tr>
+            <tr>
+              <td><code>FRA</code></td>
+              <td>Frankfurt</td>
+              <td>Germany</td>
+              <td data-region="EU">Europe</td>
+              <td><span class="tier-premium">Premium</span></td>
+              <td>140</td>
+              <td>1.6</td>
+            </tr>
+            <tr>
+              <td><code>SIN</code></td>
+              <td>Singapore</td>
+              <td>Singapore</td>
+              <td data-region="AP">Asia Pacific</td>
+              <td><span class="tier-premium">Premium</span></td>
+              <td>110</td>
+              <td>1.4</td>
+            </tr>
+            <tr>
+              <td><code>SYD</code></td>
+              <td>Sydney</td>
+              <td>Australia</td>
+              <td data-region="AP">Asia Pacific</td>
+              <td><span class="tier-premium">Premium</span></td>
+              <td>85</td>
+              <td>1.0</td>
+            </tr>
+            <tr>
+              <td><code>GRU</code></td>
+              <td>Sao Paulo</td>
+              <td>Brazil</td>
+              <td data-region="AM">Americas</td>
+              <td><span class="tier-premium">Premium</span></td>
+              <td>90</td>
+              <td>1.0</td>
+            </tr>
+            <tr>
+              <td><code>BOM</code></td>
+              <td>Mumbai</td>
+              <td>India</td>
+              <td data-region="AP">Asia Pacific</td>
+              <td><span class="tier-premium">Premium</span></td>
+              <td>70</td>
+              <td>0.8</td>
+            </tr>
+          </tbody>
         </table>
       </div>
       <noscript><p style="margin-top:20px">The location table is drawn in the browser. Write to hello@securedview.com for the list as a file.</p></noscript>
@@ -179,7 +264,7 @@
       <div>
         <h4>Company</h4>
         <ul>
-          <li><a href="/free.html">Why it is free</a></li>
+          <li><a href="/free.html">Pricing</a></li>
           <li><a href="/privacy.html">Privacy and logs</a></li>
           <li><a href="/privacy.html#audit">Independent audit</a></li>
           <li><a href="/privacy.html#transparency">Transparency</a></li>
