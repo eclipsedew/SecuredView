@@ -1,17 +1,21 @@
 """Paystack payment integration routes."""
 import os
+import re
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from database import get_db
 from models import Account, Subscription, PREMIUM_PLANS, PAYSTACK_CURRENCY, USD_TO_GHS
 from auth import get_current_account
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional
 from datetime import datetime, timedelta, timezone
 import secrets
 
 router = APIRouter(prefix="/api/paystack", tags=["paystack"])
+limiter = Limiter(key_func=get_remote_address)
 
 PAYSTACK_SECRET_KEY = os.getenv("PAYSTACK_SECRET_KEY", "")
 PAYSTACK_BASE_URL = "https://api.paystack.co"
@@ -31,7 +35,15 @@ def _ensure_utc(dt):
 
 class InitializeRequest(BaseModel):
     plan_id: str
-    email: str
+    email: str = Field(..., max_length=254)
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, v):
+        v = v.strip().lower()
+        if not re.fullmatch(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}", v):
+            raise ValueError("Invalid email format")
+        return v
 
 
 class InitializeResponse(BaseModel):
@@ -49,7 +61,9 @@ class VerifyResponse(BaseModel):
 
 
 @router.post("/initialize", response_model=InitializeResponse)
+@limiter.limit("10/hour")
 def initialize_payment(
+    request: Request,
     req: InitializeRequest,
     account: Account = Depends(get_current_account),
 ):
@@ -66,7 +80,7 @@ def initialize_payment(
     amount_pesewas = int(amount_ghs * 100)
     reference = f"SV-{secrets.token_hex(8).upper()}"
 
-    with httpx.Client() as client:
+    with httpx.Client(timeout=10.0) as client:
         resp = client.post(
             f"{PAYSTACK_BASE_URL}/transaction/initialize",
             headers={
@@ -103,12 +117,21 @@ def initialize_payment(
 
 
 class VerifyRequest(BaseModel):
-    reference: str
+    reference: str = Field(..., max_length=64)
     plan_id: str
+
+    @field_validator("reference")
+    @classmethod
+    def validate_reference(cls, v):
+        if not re.fullmatch(r"SV-[A-F0-9]{16}", v):
+            raise ValueError("Invalid payment reference format")
+        return v
 
 
 @router.post("/verify", response_model=VerifyResponse)
+@limiter.limit("20/hour")
 def verify_payment(
+    request: Request,
     req: VerifyRequest,
     account: Account = Depends(get_current_account),
     db: Session = Depends(get_db),
@@ -121,7 +144,7 @@ def verify_payment(
     if not PAYSTACK_SECRET_KEY:
         raise HTTPException(status_code=500, detail="Payment gateway not configured")
 
-    with httpx.Client() as client:
+    with httpx.Client(timeout=10.0) as client:
         resp = client.get(
             f"{PAYSTACK_BASE_URL}/transaction/verify/{req.reference}",
             headers={

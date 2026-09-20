@@ -3,9 +3,11 @@ import os
 from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
+from starlette.responses import JSONResponse
 
 # Load .env file
 _env_file = Path(__file__).parent / ".env"
@@ -23,24 +25,26 @@ from routes.premium import router as premium_router
 from routes.paystack import router as paystack_router
 from routes.admin import router as admin_router
 
-# Rate limiter
+# Rate limiter — global
 limiter = Limiter(key_func=get_remote_address)
 
 app = FastAPI(
     title="SecureVPN API",
-    description="Backend API for SecureVPN - Cloudflare WARP VPN client",
+    description="Backend API for SecuredView - Cloudflare WARP VPN client",
     version="1.0.0",
 )
 
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# API key middleware — only the official app can call the API
+# ── Security middleware ──────────────────────────────────
+
+# 1. API key middleware — only the official app can call the API
 from middleware import ApiKeyMiddleware, APP_API_KEY
 app.add_middleware(ApiKeyMiddleware)
 print(f"API key loaded: {APP_API_KEY[:8]}...")
 
-# CORS: explicit origins, no wildcard + credentials
+# 2. CORS: explicit origins, no wildcard + credentials
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost,http://localhost:8080").split(",")
 
@@ -58,9 +62,36 @@ else:
         allow_origins=ALLOWED_ORIGINS,
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "DELETE"],
-        allow_headers=["Authorization", "Content-Type"],
+        allow_headers=["Authorization", "Content-Type", "X-Api-Key"],
     )
 
+# 3. Request body size limit (1 MB max)
+MAX_BODY_SIZE = 1 * 1024 * 1024  # 1 MB
+
+
+@app.middleware("http")
+async def limit_request_size(request: Request, call_next):
+    content_length = request.headers.get("content-length")
+    if content_length and int(content_length) > MAX_BODY_SIZE:
+        return JSONResponse(
+            status_code=413,
+            content={"detail": "Request body too large (max 1 MB)"},
+        )
+    return await call_next(request)
+
+
+# 4. Security headers
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    return response
+
+
+# ── Routers ──────────────────────────────────────────────
 app.include_router(accounts_router)
 app.include_router(servers_router)
 app.include_router(premium_router)
@@ -80,7 +111,7 @@ def health():
     return {"status": "ok"}
 
 
-# Seed servers on first run
+# ── Seed servers on first run ────────────────────────────
 SEED_SERVERS = [
     {"id": "us-east", "name": "US East", "country": "United States", "country_code": "US", "city": "New York",
      "ip_address": "162.159.192.1", "latitude": 40.7128, "longitude": -74.0060, "tier": "free", "speed_mbps": 150, "ping_ms": 15},

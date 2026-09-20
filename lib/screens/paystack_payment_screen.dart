@@ -309,12 +309,8 @@ class _VerificationSheetState extends State<_VerificationSheet> {
             _message = '${widget.planName} activated!';
           });
 
-          // Update local account state
-          if (result.expiresAt != null) {
-            await account.upgradeToPremium(
-              result.expiresAt!.difference(DateTime.now()).inDays,
-            );
-          }
+          // Backend already activated premium via /paystack/verify — just sync local state
+          await account.syncPremiumStatus();
           return;
         }
 

@@ -1,11 +1,30 @@
 """Pydantic schemas for API request/response validation."""
+import re
 from datetime import datetime
 from typing import Optional
 from pydantic import BaseModel, Field, field_validator
-import re
 
 
-# Account
+# ── Input sanitization helpers ───────────────────────────
+def _sanitize_name(v: str) -> str:
+    """Strip and limit display names — prevent XSS / injection."""
+    v = v.strip()
+    # Remove HTML tags
+    v = re.sub(r"<[^>]+>", "", v)
+    # Remove control characters
+    v = re.sub(r"[\x00-\x1f\x7f]", "", v)
+    return v[:64]
+
+
+def _validate_email(v: str) -> str:
+    """Basic email format validation."""
+    v = v.strip().lower()
+    if not re.fullmatch(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}", v):
+        raise ValueError("Invalid email format")
+    return v
+
+
+# ── Account ──────────────────────────────────────────────
 class AccountCreate(BaseModel):
     pin: str = Field(..., min_length=4, max_length=4, description="4-digit PIN")
     device_id: str = Field(..., min_length=8, max_length=128, description="Unique device identifier")
@@ -19,10 +38,25 @@ class AccountCreate(BaseModel):
             raise ValueError("PIN must be exactly 4 digits")
         return v
 
+    @field_validator("device_id")
+    @classmethod
+    def device_id_alphanumeric(cls, v):
+        if not re.fullmatch(r"[a-f0-9]{8,128}", v):
+            raise ValueError("Device ID must be lowercase hex")
+        return v
+
+    @field_validator("platform")
+    @classmethod
+    def platform_valid(cls, v):
+        allowed = {"android", "ios", "linux", "windows", "macos", "web"}
+        if v.lower() not in allowed:
+            raise ValueError(f"Platform must be one of: {', '.join(allowed)}")
+        return v.lower()
+
 
 class AccountLogin(BaseModel):
-    account_id: str
-    pin: str
+    account_id: str = Field(..., min_length=16, max_length=16)
+    pin: str = Field(..., min_length=4, max_length=4)
     device_id: str = Field(..., min_length=8, max_length=128)
     device_name: str = Field(default="Unknown Device", max_length=128)
     platform: str = Field(default="android", max_length=32)
@@ -33,6 +67,21 @@ class AccountLogin(BaseModel):
         if not re.fullmatch(r"\d{4}", v):
             raise ValueError("PIN must be exactly 4 digits")
         return v
+
+    @field_validator("account_id")
+    @classmethod
+    def account_id_hex(cls, v):
+        if not re.fullmatch(r"[a-f0-9]{16}", v):
+            raise ValueError("Invalid account ID format")
+        return v
+
+    @field_validator("platform")
+    @classmethod
+    def platform_valid(cls, v):
+        allowed = {"android", "ios", "linux", "windows", "macos", "web"}
+        if v.lower() not in allowed:
+            raise ValueError(f"Platform must be one of: {', '.join(allowed)}")
+        return v.lower()
 
 
 class AccountInfo(BaseModel):
@@ -55,7 +104,7 @@ class TokenResponse(BaseModel):
     is_premium: bool
 
 
-# Device
+# ── Device ───────────────────────────────────────────────
 class DeviceInfo(BaseModel):
     id: str
     device_name: str
@@ -68,7 +117,7 @@ class DeviceInfo(BaseModel):
         from_attributes = True
 
 
-# Server
+# ── Server ───────────────────────────────────────────────
 class ServerInfo(BaseModel):
     id: str
     name: str
@@ -148,19 +197,19 @@ class ServerUpdate(BaseModel):
 class UpdateName(BaseModel):
     name: str = Field(..., min_length=1, max_length=64)
 
+    @field_validator("name")
+    @classmethod
+    def sanitize_name(cls, v):
+        return _sanitize_name(v)
 
-# Subscription / Premium
+
+# ── Subscription / Premium ───────────────────────────────
 class PlanInfo(BaseModel):
     id: str
     name: str
     days: int
     price: float
     max_devices: int
-
-
-class PurchaseRequest(BaseModel):
-    plan_id: str
-    payment_method: str = "simulated"
 
 
 class PurchaseResponse(BaseModel):
@@ -183,7 +232,7 @@ class SubscriptionInfo(BaseModel):
         from_attributes = True
 
 
-# Stats
+# ── Stats ────────────────────────────────────────────────
 class ServerStats(BaseModel):
     total_accounts: int
     total_premium_accounts: int
@@ -194,7 +243,7 @@ class ServerStats(BaseModel):
     premium_servers: int
 
 
-# Admin
+# ── Admin ────────────────────────────────────────────────
 class AdminLogin(BaseModel):
-    username: str
-    password: str
+    username: str = Field(..., max_length=64)
+    password: str = Field(..., max_length=128)
