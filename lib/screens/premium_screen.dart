@@ -83,7 +83,7 @@ class PremiumScreen extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            '9 locations worldwide. No ads. 2 devices.',
+            '9 locations worldwide. No ads. 3 devices.',
             style: GoogleFonts.publicSans(color: AppTheme.muted, fontSize: 14),
             textAlign: TextAlign.center,
           ),

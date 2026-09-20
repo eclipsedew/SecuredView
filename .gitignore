@@ -28,3 +28,4 @@ backend/securevpn.db
 *.exe
 *.dll
 pubspec.lock
+backend/.env
