@@ -6,6 +6,7 @@ import '../services/premium_service.dart';
 import '../models/vpn_models.dart';
 import '../theme/app_theme.dart';
 import '../widgets/securedview_logo.dart';
+import 'paystack_payment_screen.dart';
 
 class PremiumScreen extends StatelessWidget {
   const PremiumScreen({super.key});
@@ -279,26 +280,18 @@ class PremiumScreen extends StatelessWidget {
       if (!created || !context.mounted) return;
     }
 
-    final success = await premium.purchasePremium(
-      plan.id,
-      account.account!.accountId,
-      api: account.api,
-    );
-
+    // Open Paystack payment screen
     if (!context.mounted) return;
-
-    if (success) {
-      await account.upgradeToPremium(plan.days);
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${plan.name} plan activated.')),
-      );
-      Navigator.pop(context);
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(premium.error ?? 'Purchase failed.')),
-      );
-    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PaystackPaymentScreen(
+          planId: plan.id,
+          planName: plan.name,
+          amount: plan.priceUSD,
+        ),
+      ),
+    );
   }
 
   Future<String?> _showPinDialog(BuildContext context) {
