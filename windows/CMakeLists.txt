@@ -9,6 +9,12 @@ cmake_policy(SET CMP0063 NEW)
 set(CMAKE_INSTALL_RPATH "$ORIGIN/lib")
 set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
 
+function(APPLY_STANDARD_SETTINGS TARGET)
+  target_compile_features(${TARGET} PUBLIC cxx_std_17)
+  target_compile_definitions(${TARGET} PRIVATE "NOMINMAX" "UNICODE" "_UNICODE"
+    $<$<NOT:$<CONFIG:Debug>>:NDEBUG>)
+endfunction()
+
 set(FLUTTER_MANAGED_DIR "${CMAKE_CURRENT_SOURCE_DIR}/flutter")
 add_subdirectory(${FLUTTER_MANAGED_DIR})
 
