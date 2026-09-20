@@ -40,7 +40,7 @@ class SecuredViewApp extends StatelessWidget {
         ),
       ],
       child: MaterialApp(
-        title: 'SecuredView',
+        title: 'SecuredView VPN',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.darkTheme,
         home: const HomeScreen(),

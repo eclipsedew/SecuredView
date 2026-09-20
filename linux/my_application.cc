@@ -14,7 +14,7 @@ static void my_application_activate(GApplication* application) {
   MyApplication* self = MY_APPLICATION(application);
   GtkWindow* window = GTK_WINDOW(gtk_application_window_new(GTK_APPLICATION(application)));
 
-  gtk_window_set_title(window, "SecuredView");
+  gtk_window_set_title(window, "SecuredView VPN");
   gtk_window_set_default_size(window, 420, 800);
   gtk_window_set_position(window, GTK_WIN_POS_CENTER);
 

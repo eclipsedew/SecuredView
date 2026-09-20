@@ -21,7 +21,7 @@ class PrivacyScreen extends StatelessWidget {
         children: [
           _section('Privacy Policy', 'Last updated: September 19, 2026'),
           _section('1. Introduction',
-            'SecuredView ("we", "us", or "our") is committed to protecting your privacy. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you use our mobile application and related services (collectively, "the App").'),
+            'SecuredView VPN ("we", "us", or "our") is committed to protecting your privacy. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you use our mobile application and related services (collectively, "the App").'),
           _section('2. Information We Collect',
             'We collect the following types of information:\n\n'
             'Account Information: When you create an account, we store a hashed version of your 4-digit PIN and a unique account identifier. We do not collect your name, email, or phone number.\n\n'

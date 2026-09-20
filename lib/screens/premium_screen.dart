@@ -72,7 +72,7 @@ class PremiumScreen extends StatelessWidget {
           const SecuredViewLogo(size: 48),
           const SizedBox(height: 18),
           Text(
-            'Unlock SecuredView Premium',
+            'Unlock SecuredView VPN Premium',
             style: GoogleFonts.archivo(
               color: AppTheme.ink,
               fontWeight: FontWeight.w700,

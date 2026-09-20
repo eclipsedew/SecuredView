@@ -21,9 +21,9 @@ class TOSScreen extends StatelessWidget {
         children: [
           _section('Terms of Service', 'Last updated: September 19, 2026'),
           _section('1. Acceptance of Terms',
-            'By downloading, installing, or using SecuredView ("the App"), you agree to be bound by these Terms of Service ("Terms"). If you do not agree to these Terms, do not use the App.'),
+            'By downloading, installing, or using SecuredView VPN ("the App"), you agree to be bound by these Terms of Service ("Terms"). If you do not agree to these Terms, do not use the App.'),
           _section('2. Description of Service',
-            'SecuredView provides a virtual private network (VPN) service that routes your internet traffic through encrypted tunnels. The App uses Cloudflare WARP technology to establish secure connections. Free accounts are limited to 2 server locations. Premium accounts unlock all server locations and additional features.'),
+            'SecuredView VPN provides a virtual private network (VPN) service that routes your internet traffic through encrypted tunnels. The App uses Cloudflare WARP technology to establish secure connections. Free accounts are limited to 2 server locations. Premium accounts unlock all server locations and additional features.'),
           _section('3. Account Registration',
             'To use the App, you must create an account with a 4-digit PIN. You are responsible for maintaining the confidentiality of your account credentials. You must be at least 13 years of age to create an account. You are responsible for all activity that occurs under your account.'),
           _section('4. Acceptable Use',

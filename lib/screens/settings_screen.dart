@@ -110,7 +110,7 @@ class SettingsScreen extends StatelessWidget {
             const SecuredViewLogo(size: 16),
             const SizedBox(width: 8),
             Text(
-              'SecuredView',
+              'SecuredView VPN',
               style: GoogleFonts.archivo(
                 color: AppTheme.muted,
                 fontSize: 11,

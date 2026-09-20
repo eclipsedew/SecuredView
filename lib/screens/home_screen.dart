@@ -147,7 +147,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             const SecuredViewLogo(size: 26),
             const SizedBox(width: 10),
             Text(
-              'SecuredView',
+              'SecuredView VPN',
               style: GoogleFonts.archivo(
                 color: AppTheme.ink,
                 fontSize: 18,
