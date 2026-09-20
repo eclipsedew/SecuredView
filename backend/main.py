@@ -1,15 +1,26 @@
 """SecureVPN Backend - FastAPI application."""
 import os
+from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
+
+# Load .env file
+_env_file = Path(__file__).parent / ".env"
+if _env_file.exists():
+    for line in _env_file.read_text().splitlines():
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            k, v = line.split("=", 1)
+            os.environ.setdefault(k.strip(), v.strip())
 from database import init_db, SessionLocal
 from models import Server
 from routes import router as accounts_router
 from routes.servers import router as servers_router
 from routes.premium import router as premium_router
+from routes.paystack import router as paystack_router
 from routes.admin import router as admin_router
 
 # Rate limiter
@@ -48,6 +59,7 @@ else:
 app.include_router(accounts_router)
 app.include_router(servers_router)
 app.include_router(premium_router)
+app.include_router(paystack_router)
 app.include_router(admin_router)
 
 

@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#eceef0">
+<title>Network | SecuredView</title>
+<meta name="description" content="Every SecuredView exit node, with city, country, node count and capacity. 76 cities across 61 countries, all running from memory on hardware we own.">
+<link rel="icon" type="image/svg+xml" href="/img/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=JetBrains+Mono:wght@400;500&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/styles.css">
+<script>document.documentElement.classList.add("js")</script>
+<meta property="og:type" content="website">
+<meta property="og:title" content="Network | SecuredView">
+<meta property="og:description" content="Every exit node, with city, country, node count and capacity.">
+<meta property="og:image" content="/img/og.png">
+<meta name="twitter:card" content="summary_large_image">
+</head>
+<body>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="hdr">
+  <div class="wrap hdr-in">
+    <a class="brand" href="/index.html" aria-label="SecuredView home">
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 8.5V3h5.5M15.5 3H21v5.5M21 15.5V21h-5.5M8.5 21H3v-5.5" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3.2" fill="#163f8f"/></svg>
+      <span>SecuredView</span>
+    </a>
+    <div class="hdr-right">
+      <nav class="nav" aria-label="Primary">
+        <a href="/network.html" aria-current="page">Network</a>
+        <a href="/apps.html">Apps</a>
+        <a href="/free.html">Why it is free</a>
+        <a href="/privacy.html">Privacy</a>
+      </nav>
+      <a class="btn btn-fill" href="/apps.html">Get SecuredView</a>
+      <button class="burger" id="burger" aria-label="Open menu" aria-expanded="false" aria-controls="mnav">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+      </button>
+    </div>
+  </div>
+</header>
+<nav class="mnav" id="mnav" aria-label="Primary">
+  <a href="/network.html" aria-current="page">Network</a>
+  <a href="/apps.html">Apps</a>
+  <a href="/free.html">Why it is free</a>
+  <a href="/privacy.html">Privacy</a>
+  <a class="btn btn-fill" href="/apps.html">Get SecuredView</a>
+</nav>
+
+<main id="main">
+
+  <section class="page-head">
+    <div class="wrap">
+      <p class="lbl">The network</p>
+      <h1>Every node, and what it can carry.</h1>
+      <p class="lead">Nothing here is resold and nothing runs on borrowed cloud capacity. Each site below is hardware we bought, in a facility one of us has stood inside.</p>
+    </div>
+  </section>
+
+  <section class="wrap">
+    <div class="map-wrap rv">
+      <div class="map-bar">
+        <span class="lbl">Exit nodes, live</span>
+        <span class="lbl"><span data-net="cities">76</span> cities &nbsp;/&nbsp; <span data-net="countries">61</span> countries &nbsp;/&nbsp; <span data-net="nodes">2,590</span> nodes &nbsp;/&nbsp; <span data-net="capacity">26</span> Tbit/s</span>
+      </div>
+      <div data-map="full"></div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <div class="wrap">
+      <div class="sec-head rv">
+        <p class="lbl">How a node is built</p>
+        <div>
+          <h2>Nothing on a node survives losing power.</h2>
+          <p>Every exit runs its whole system from memory. There is no disk to image, no swap file to recover, and no log directory to subpoena. Pull the power and the machine has nothing to say about anyone who used it.</p>
+        </div>
+      </div>
+
+      <div class="grid-3 rv">
+        <div class="cell">
+          <span class="lbl">Storage</span>
+          <h3>Memory only</h3>
+          <p>The operating system is loaded over the network at boot and lives in RAM for the life of the machine. Disks are physically absent from the chassis, not merely unused.</p>
+        </div>
+        <div class="cell">
+          <span class="lbl">Ownership</span>
+          <h3>Bought, not rented</h3>
+          <p>We own the machines and rent only the rack, the power and the transit. No shared tenancy and no provider with a hypervisor sitting above our traffic.</p>
+        </div>
+        <div class="cell">
+          <span class="lbl">Name resolution</span>
+          <h3>Resolved on the node</h3>
+          <p>Each node answers its own lookups rather than passing them to a public resolver, so your queries never leave the tunnel to reach a third party.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <div class="wrap">
+      <div class="sec-head rv">
+        <p class="lbl">Locations</p>
+        <div>
+          <h2>All <span data-net="cities">76</span> sites, with capacity.</h2>
+          <p>Capacity is the committed port speed at the site, not a burst figure. Filter by region, or read it straight through.</p>
+        </div>
+      </div>
+
+      <div class="map-bar rv" style="border-bottom:0;padding-bottom:0;margin-bottom:20px">
+        <div class="filters">
+          <button type="button" data-filter="all" aria-pressed="true">All</button>
+          <button type="button" data-filter="AF" aria-pressed="false">Africa</button>
+          <button type="button" data-filter="AM" aria-pressed="false">Americas</button>
+          <button type="button" data-filter="AP" aria-pressed="false">Asia Pacific</button>
+          <button type="button" data-filter="EU" aria-pressed="false">Europe</button>
+          <button type="button" data-filter="ME" aria-pressed="false">Middle East</button>
+        </div>
+      </div>
+
+      <div class="tscroll rv">
+        <table class="tbl" id="locations">
+          <thead>
+            <tr>
+              <th scope="col">Code</th>
+              <th scope="col">City</th>
+              <th scope="col">Country</th>
+              <th scope="col">Region</th>
+              <th scope="col">Nodes</th>
+              <th scope="col">Gbit/s</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <noscript><p style="margin-top:20px">The location table is drawn in the browser. Write to hello@securedview.com for the list as a file.</p></noscript>
+    </div>
+  </section>
+
+  <section class="stmt">
+    <div class="wrap">
+      <div class="sec-head rv">
+        <p class="lbl">Adding sites</p>
+        <div>
+          <h2>We add a country when we can hold it properly, not when it looks good on a count.</h2>
+          <p>Plenty of providers advertise a country by renting one virtual machine inside it. We would rather have 61 countries we can describe honestly than 90 we cannot. When a site cannot meet the memory only rule or we cannot own the hardware, it does not go on the map.</p>
+          <a class="tlink" href="/privacy.html">What each node holds
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M2 8h11M9 4l4 4-4 4"/></svg>
+          </a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="ftr">
+  <div class="wrap">
+    <div class="ftr-in">
+      <div>
+        <a class="brand" href="/index.html" aria-label="SecuredView home">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 8.5V3h5.5M15.5 3H21v5.5M21 15.5V21h-5.5M8.5 21H3v-5.5" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3.2" fill="#163f8f"/></svg>
+          <span>SecuredView</span>
+        </a>
+        <p class="about">Encrypted routing through nodes we own, given away because the capacity is already there.</p>
+      </div>
+      <div>
+        <h4>Product</h4>
+        <ul>
+          <li><a href="/apps.html">Apps</a></li>
+          <li><a href="/network.html">Network</a></li>
+          <li><a href="/apps.html#setup">Manual setup</a></li>
+          <li><a href="/apps.html#routers">Routers</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Company</h4>
+        <ul>
+          <li><a href="/free.html">Why it is free</a></li>
+          <li><a href="/privacy.html">Privacy and logs</a></li>
+          <li><a href="/privacy.html#audit">Independent audit</a></li>
+          <li><a href="/privacy.html#transparency">Transparency</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Contact</h4>
+        <ul>
+          <li><a href="mailto:hello@securedview.com">hello@securedview.com</a></li>
+          <li><a href="mailto:abuse@securedview.com">abuse@securedview.com</a></li>
+          <li><a href="mailto:legal@securedview.com">legal@securedview.com</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="ftr-btm">
+      <span>&copy; <span data-year>2026</span> SecuredView</span>
+      <span>Operated from Accra, Ghana</span>
+      <span>Status: all nodes reachable</span>
+    </div>
+  </div>
+</footer>
+
+<script src="/js/network.js" defer></script>
+<script src="/js/main.js" defer></script>
+</body>
+</html>
