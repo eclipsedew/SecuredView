@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:http/io_client.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
@@ -11,6 +12,14 @@ class ApiService {
     return 'http://localhost:8080';
   }
 
+  // Embedded API key — matches backend .app_key
+  static const String appApiKey = 'df6b1d450fbfd724e2d099c9e0949da65cf8f43ba607c87ffe646e7465f34eb5';
+
+  // Certificate pin SHA-256 hashes (add production server cert here)
+  static const List<String> _pinnedCerts = [
+    // Will be populated with production server cert hash
+  ];
+
   static const _tokenKey = 'jwt_token';
   static const _accountIdKey = 'account_id';
   static const _deviceIdKey = 'device_id';
@@ -19,6 +28,8 @@ class ApiService {
   String? _accountId;
   String? _deviceId;
   SharedPreferences? _prefs;
+  late http.Client _httpClient;
+  http.Client get httpClient => _httpClient;
 
   String get baseUrl => _defaultBaseUrl;
   String? get token => _token;
@@ -35,6 +46,24 @@ class ApiService {
       _deviceId = _generateDeviceId();
       await _prefs!.setString(_deviceIdKey, _deviceId!);
     }
+    _httpClient = _createSecureClient();
+  }
+
+  /// Create an HTTP client with certificate pinning
+  http.Client _createSecureClient() {
+    if (_pinnedCerts.isEmpty || kIsWeb) {
+      return http.Client();
+    }
+
+    // In production, pin specific certs. For now, use default with extra validation.
+    final httpClient = HttpClient()
+      ..badCertificateCallback = (X509Certificate cert, String host, int port) {
+        // In production, verify against _pinnedCerts here
+        // For now, reject any invalid cert
+        return false;
+      };
+
+    return IOClient(httpClient);
   }
 
   String _generateDeviceId() {
@@ -65,7 +94,13 @@ class ApiService {
 
   Map<String, String> get _headers => {
         'Content-Type': 'application/json',
+        'X-Api-Key': appApiKey,
         if (_token != null) 'Authorization': 'Bearer $_token',
+      };
+
+  Map<String, String> get _publicHeaders => {
+        'Content-Type': 'application/json',
+        'X-Api-Key': appApiKey,
       };
 
   Uri _uri(String path) => Uri.parse('$baseUrl$path');
@@ -104,9 +139,9 @@ class ApiService {
     required String deviceName,
     required String platform,
   }) async {
-    final resp = await http.post(
+    final resp = await _httpClient.post(
       _uri('/api/accounts/register'),
-      headers: {'Content-Type': 'application/json'},
+      headers: _publicHeaders,
       body: jsonEncode({
         'pin': pin,
         'device_id': _deviceId,
@@ -128,9 +163,9 @@ class ApiService {
     required String deviceName,
     required String platform,
   }) async {
-    final resp = await http.post(
+    final resp = await _httpClient.post(
       _uri('/api/accounts/login'),
-      headers: {'Content-Type': 'application/json'},
+      headers: _publicHeaders,
       body: jsonEncode({
         'account_id': accountId,
         'pin': pin,
@@ -148,38 +183,38 @@ class ApiService {
   }
 
   Future<AccountInfo> getAccountInfo() async {
-    final resp = await http.get(_uri('/api/accounts/me'), headers: _headers);
+    final resp = await _httpClient.get(_uri('/api/accounts/me'), headers: _headers);
     final data = await _handleResponse(resp);
     return AccountInfo.fromJson(data);
   }
 
   // Servers
   Future<List<ServerData>> getAvailableServers() async {
-    final resp = await http.get(_uri('/api/servers/'), headers: _headers);
+    final resp = await _httpClient.get(_uri('/api/servers/'), headers: _headers);
     final list = await _handleListResponse(resp);
     return list.map((s) => ServerData.fromJson(s)).toList();
   }
 
   Future<List<ServerData>> getAllServersPublic() async {
-    final resp = await http.get(_uri('/api/servers/all'), headers: {'Content-Type': 'application/json'});
+    final resp = await _httpClient.get(_uri('/api/servers/all'), headers: _publicHeaders);
     final list = await _handleListResponse(resp);
     return list.map((s) => ServerData.fromJson(s)).toList();
   }
 
   // Devices
   Future<List<DeviceInfoData>> getDevices() async {
-    final resp = await http.get(_uri('/api/accounts/me/devices'), headers: _headers);
+    final resp = await _httpClient.get(_uri('/api/accounts/me/devices'), headers: _headers);
     final list = await _handleListResponse(resp);
     return list.map((d) => DeviceInfoData.fromJson(d)).toList();
   }
 
   Future<void> removeDevice(String deviceId) async {
-    await http.delete(_uri('/api/accounts/me/devices/$deviceId'), headers: _headers);
+    await _httpClient.delete(_uri('/api/accounts/me/devices/$deviceId'), headers: _headers);
   }
 
   // Premium
   Future<List<PlanData>> getPlans() async {
-    final resp = await http.get(_uri('/api/premium/plans'), headers: {'Content-Type': 'application/json'});
+    final resp = await _httpClient.get(_uri('/api/premium/plans'), headers: _publicHeaders);
     final list = await _handleListResponse(resp);
     return list.map((p) => PlanData.fromJson(p)).toList();
   }
@@ -188,7 +223,7 @@ class ApiService {
     required String planId,
     String paymentMethod = 'simulated',
   }) async {
-    final resp = await http.post(
+    final resp = await _httpClient.post(
       _uri('/api/premium/purchase'),
       headers: _headers,
       body: jsonEncode({'plan_id': planId, 'payment_method': paymentMethod}),
@@ -202,7 +237,7 @@ class ApiService {
   }
 
   Future<PremiumStatus> getPremiumStatus() async {
-    final resp = await http.get(_uri('/api/premium/status'), headers: _headers);
+    final resp = await _httpClient.get(_uri('/api/premium/status'), headers: _headers);
     final data = await _handleResponse(resp);
     return PremiumStatus.fromJson(data);
   }
@@ -226,7 +261,7 @@ class ApiService {
 
   Future<bool> checkHealth() async {
     try {
-      final resp = await http.get(_uri('/health'), headers: {'Content-Type': 'application/json'})
+      final resp = await _httpClient.get(_uri('/health'), headers: _publicHeaders)
           .timeout(const Duration(seconds: 5));
       return resp.statusCode == 200;
     } catch (_) {

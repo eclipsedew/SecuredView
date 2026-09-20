@@ -35,6 +35,11 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+# API key middleware — only the official app can call the API
+from middleware import ApiKeyMiddleware, APP_API_KEY
+app.add_middleware(ApiKeyMiddleware)
+print(f"API key loaded: {APP_API_KEY[:8]}...")
+
 # CORS: explicit origins, no wildcard + credentials
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost,http://localhost:8080").split(",")

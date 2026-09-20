@@ -29,3 +29,6 @@ backend/securevpn.db
 *.dll
 pubspec.lock
 backend/.env
+backend/.app_key
+android/app/release-key.jks
+android/key.properties
