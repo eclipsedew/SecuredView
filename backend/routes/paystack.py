@@ -4,8 +4,6 @@ import re
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
-from slowapi import Limiter
-from slowapi.util import get_remote_address
 from database import get_db
 from models import Account, Subscription, PREMIUM_PLANS, PAYSTACK_CURRENCY, USD_TO_GHS
 from auth import get_current_account
@@ -13,9 +11,9 @@ from pydantic import BaseModel, Field, field_validator
 from typing import Optional
 from datetime import datetime, timedelta, timezone
 import secrets
+from limiter import limiter
 
 router = APIRouter(prefix="/api/paystack", tags=["paystack"])
-limiter = Limiter(key_func=get_remote_address)
 
 PAYSTACK_SECRET_KEY = os.getenv("PAYSTACK_SECRET_KEY", "")
 PAYSTACK_BASE_URL = "https://api.paystack.co"
@@ -196,7 +194,7 @@ def verify_payment(
             expires_at=existing.expires_at,
         )
 
-    # Activate premium
+    # Activate premium — use select_for_update style via immediate insert with unique check
     now = _now_utc()
     expires = now + timedelta(days=plan["days"])
 
@@ -216,6 +214,23 @@ def verify_payment(
         payment_ref=req.reference,
     )
     db.add(sub)
+    try:
+        db.flush()  # Flush to trigger unique constraint check if any
+    except Exception:
+        db.rollback()
+        existing = db.query(Subscription).filter(
+            Subscription.payment_ref == req.reference
+        ).first()
+        if existing:
+            return VerifyResponse(
+                success=True,
+                message="Plan already activated",
+                reference=req.reference,
+                plan_id=req.plan_id,
+                expires_at=existing.expires_at,
+            )
+        raise
+
     account.is_premium = True
     account.premium_expires_at = expires
     db.commit()

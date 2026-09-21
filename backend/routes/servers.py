@@ -44,6 +44,8 @@ def list_servers(
         is_premium = account.is_premium and exp and exp > datetime.now(timezone.utc)
 
     if tier:
+        if tier == "premium" and not is_premium:
+            raise HTTPException(status_code=403, detail="Premium access required for premium servers")
         query = query.filter(Server.tier == tier)
     elif not is_premium:
         query = query.filter(Server.tier == "free")

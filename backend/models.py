@@ -74,7 +74,7 @@ class Subscription(Base):
     status = Column(String(16), default="active")
     purchased_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     expires_at = Column(DateTime, nullable=False)
-    payment_ref = Column(String(64), nullable=True)
+    payment_ref = Column(String(64), nullable=True, unique=True)
 
     account = relationship("Account", back_populates="subscriptions")
 

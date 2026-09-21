@@ -3,8 +3,6 @@ import re
 import secrets
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
-from slowapi import Limiter
-from slowapi.util import get_remote_address
 from database import get_db
 from models import Account, Device, FREE_MAX_DEVICES, PREMIUM_MAX_DEVICES
 from schemas import (
@@ -15,9 +13,9 @@ from auth import (
     _is_locked_out, _record_failed_login, _clear_failed_logins
 )
 from datetime import datetime, timezone
+from limiter import limiter
 
 router = APIRouter(prefix="/api/accounts", tags=["accounts"])
-limiter = Limiter(key_func=get_remote_address)
 
 PLATFORM_MAX_LENGTH = 32
 
@@ -50,6 +48,17 @@ def _max_devices(account: Account) -> int:
 @limiter.limit("3/hour")
 def register(request: Request, req: AccountCreate, db: Session = Depends(get_db)):
     """Create a new account with a 4-digit PIN."""
+    # Check if device is already registered to another account
+    existing_device = db.query(Device).filter(
+        Device.device_id == req.device_id,
+        Device.is_active == True,
+    ).first()
+    if existing_device:
+        raise HTTPException(
+            status_code=409,
+            detail="Device is already registered to another account",
+        )
+
     device = Device(
         device_id=req.device_id,
         device_name=req.device_name[:128] if req.device_name and req.device_name != 'unknown' else _generate_device_name(),
@@ -92,10 +101,6 @@ def login(request: Request, req: AccountLogin, db: Session = Depends(get_db)):
     _clear_failed_logins(req.account_id)
 
     # Check device limit
-    active_devices = db.query(Device).filter(
-        Device.account_id == account.id,
-        Device.is_active == True,
-    ).count()
     max_devs = _max_devices(account)
 
     # Check if this device is already registered (by device_id)
@@ -109,12 +114,30 @@ def login(request: Request, req: AccountLogin, db: Session = Depends(get_db)):
         existing.is_active = True
         existing.device_name = req.device_name[:128]
         existing.platform = req.platform[:PLATFORM_MAX_LENGTH]
-    elif active_devices >= max_devs:
-        raise HTTPException(
-            status_code=403,
-            detail="Device limit reached",
-        )
     else:
+        # Re-check device limit within same query to avoid race condition
+        active_count = db.query(Device).filter(
+            Device.account_id == account.id,
+            Device.is_active == True,
+        ).count()
+        if active_count >= max_devs:
+            raise HTTPException(
+                status_code=403,
+                detail="Device limit reached",
+            )
+
+        # Check if device is already registered to another account
+        other_account_device = db.query(Device).filter(
+            Device.device_id == req.device_id,
+            Device.is_active == True,
+            Device.account_id != account.id,
+        ).first()
+        if other_account_device:
+            raise HTTPException(
+                status_code=409,
+                detail="Device is already registered to another account",
+            )
+
         device = Device(
             account_id=account.id,
             device_id=req.device_id,
@@ -126,11 +149,17 @@ def login(request: Request, req: AccountLogin, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(account)
 
+    now = datetime.now(timezone.utc)
+    exp = account.premium_expires_at
+    if exp and exp.tzinfo is None:
+        exp = exp.replace(tzinfo=timezone.utc)
+    premium_active = account.is_premium and exp and exp > now
+
     token = create_access_token(account.id)
     return TokenResponse(
         access_token=token,
         account_id=account.id,
-        is_premium=account.is_premium,
+        is_premium=premium_active,
     )
 
 
@@ -141,10 +170,16 @@ def get_me(account: Account = Depends(get_current_account), db: Session = Depend
         Device.account_id == account.id,
         Device.is_active == True,
     ).count()
+    now = datetime.now(timezone.utc)
+    exp = account.premium_expires_at
+    if exp and exp.tzinfo is None:
+        exp = exp.replace(tzinfo=timezone.utc)
+    premium_active = account.is_premium and exp and exp > now
+
     return AccountInfo(
         id=account.id,
         display_name=account.display_name,
-        is_premium=account.is_premium,
+        is_premium=premium_active,
         premium_expires_at=account.premium_expires_at,
         device_count=device_count,
         max_devices=_max_devices(account),
@@ -177,7 +212,10 @@ def remove_device(
     account: Account = Depends(get_current_account),
     db: Session = Depends(get_db),
 ):
-    """Remove a device from the account."""
+    """Remove a device from the account.
+    Note: The JWT token remains valid until expiry (24h). The device
+    will be unable to re-register or login after removal.
+    """
     device = db.query(Device).filter(
         Device.device_id == device_id,
         Device.account_id == account.id,

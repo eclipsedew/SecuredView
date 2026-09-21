@@ -38,6 +38,7 @@ class VPNService extends ChangeNotifier {
   AccountService? _accountService;
   bool _serversLoaded = false;
   bool _autoConnectDone = false;
+  bool _isConnecting = false;
 
   VPNState get state => _state;
   ServerConfig? get currentServer => _currentServer;
@@ -64,6 +65,15 @@ class VPNService extends ChangeNotifier {
 
   void updateAccount(AccountService accountService) {
     _accountService = accountService;
+
+    // If account was logged out, disconnect and reset auto-connect
+    if (!_accountService!.hasAccount) {
+      if (isConnected || isConnecting) {
+        disconnect();
+      }
+      _autoConnectDone = false;
+    }
+
     if (!_serversLoaded) {
       _fetchServersFromBackend();
     }
@@ -231,7 +241,7 @@ class VPNService extends ChangeNotifier {
   }
 
   Future<void> connect() async {
-    if (_state == VPNState.connecting || _state == VPNState.connected) return;
+    if (_state == VPNState.connecting || _state == VPNState.connected || _isConnecting) return;
 
     if (_accountService == null || !_accountService!.hasAccount) {
       _state = VPNState.error;
@@ -249,6 +259,7 @@ class VPNService extends ChangeNotifier {
 
     _state = VPNState.connecting;
     _error = null;
+    _isConnecting = true;
     notifyListeners();
 
     try {
@@ -270,11 +281,21 @@ class VPNService extends ChangeNotifier {
       _state = VPNState.error;
       _error = e.toString();
       notifyListeners();
+    } finally {
+      _isConnecting = false;
     }
   }
 
   Future<void> disconnect() async {
     if (_state == VPNState.disconnecting || _state == VPNState.disconnected) return;
+
+    // Allow disconnect from error state too
+    if (_state == VPNState.error) {
+      _state = VPNState.disconnected;
+      _error = null;
+      notifyListeners();
+      return;
+    }
 
     _state = VPNState.disconnecting;
     notifyListeners();
@@ -313,11 +334,13 @@ class VPNService extends ChangeNotifier {
     _saveSelectedServer();
     notifyListeners();
 
-    if (isConnected) {
+    if (isConnected || isConnecting) {
+      _stopKillSwitchMonitor();
+      _stopTimers();
       await disconnect();
       await Future.delayed(const Duration(milliseconds: 500));
-      await connect();
     }
+    await connect();
   }
 
   Future<void> _connectDesktop() async {
@@ -391,6 +414,20 @@ class VPNService extends ChangeNotifier {
   /// Kill switch: monitor WARP status, if it drops while connected, reconnect or block
   void _startKillSwitchMonitor() {
     _stopKillSwitchMonitor();
+
+    // Verify warp-cli is available first (desktop only)
+    if (!kIsWeb && (Platform.isLinux || Platform.isWindows || Platform.isMacOS)) {
+      try {
+        final check = Process.runSync('which', ['warp-cli']);
+        if (check.exitCode != 0) {
+          debugPrint('warp-cli not found — kill switch disabled');
+          return;
+        }
+      } catch (_) {
+        return;
+      }
+    }
+
     _killSwitchMonitor = Timer.periodic(const Duration(seconds: 5), (_) async {
       if (!isConnected || kIsWeb) return;
 
@@ -405,7 +442,7 @@ class VPNService extends ChangeNotifier {
           final result = await Process.run('warp-cli', ['--accept-tos', 'status']);
           final status = _parseWarpStatus(result.stdout.toString());
           // Only trigger on explicit "disconnected" — not "connecting", "checking", etc.
-          if (status == 'disconnected') {
+          if (status == 'disconnected' && !_isConnecting) {
             // VPN dropped unexpectedly
             if (_killSwitch) {
               // Try to reconnect

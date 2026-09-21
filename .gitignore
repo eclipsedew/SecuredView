@@ -32,3 +32,4 @@ backend/.env
 backend/.app_key
 android/app/release-key.jks
 android/key.properties
+..bfg-report/

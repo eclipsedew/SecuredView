@@ -22,6 +22,7 @@ PUBLIC_PATHS = {
     "/openapi.json",
     "/redoc",
     "/api/servers/all",
+    "/api/premium/plans",
 }
 
 

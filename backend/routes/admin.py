@@ -4,15 +4,23 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from slowapi import Limiter
-from slowapi.util import get_remote_address
 from database import get_db
-from models import Account, Device, Server, Subscription
+from models import Account, Device, Server, Subscription, FREE_MAX_DEVICES, PREMIUM_MAX_DEVICES
 from schemas import ServerStats, AdminLogin, TokenResponse, AccountInfo
 from auth import verify_admin, create_access_token, require_auth_or_admin
+from limiter import limiter
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
-limiter = Limiter(key_func=get_remote_address)
+
+
+def _max_devices(account: Account) -> int:
+    if account.is_premium and account.premium_expires_at:
+        exp = account.premium_expires_at
+        if exp.tzinfo is None:
+            exp = exp.replace(tzinfo=timezone.utc)
+        if exp > datetime.now(timezone.utc):
+            return PREMIUM_MAX_DEVICES
+    return FREE_MAX_DEVICES
 
 
 def _require_admin(auth=Depends(require_auth_or_admin)):
@@ -109,7 +117,7 @@ def list_accounts(
             is_premium=acc.is_premium,
             premium_expires_at=acc.premium_expires_at,
             device_count=device_count,
-            max_devices=3,
+            max_devices=_max_devices(acc),
             created_at=acc.created_at,
         ))
     return result
@@ -133,7 +141,7 @@ def get_account(
         is_premium=acc.is_premium,
         premium_expires_at=acc.premium_expires_at,
         device_count=device_count,
-        max_devices=3,
+        max_devices=_max_devices(acc),
         created_at=acc.created_at,
     )
 
