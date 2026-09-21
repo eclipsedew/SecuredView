@@ -149,7 +149,7 @@ class VPNService extends ChangeNotifier {
         countryCode: 'US', endpoint: 'engage.cloudflareclient.com', port: 2408,
         publicKey: 'bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=',
         ipAddress: '162.159.192.1/32', dns: '1.1.1.1',
-        isPremium: false, sortOrder: 0,
+        isPremium: true, sortOrder: 0,
         latitude: 40.7128, longitude: -74.0060,
       ),
       const ServerConfig(
@@ -157,7 +157,7 @@ class VPNService extends ChangeNotifier {
         countryCode: 'JP', endpoint: 'engage.cloudflareclient.com', port: 2408,
         publicKey: 'bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=',
         ipAddress: '162.159.196.1/32', dns: '1.1.1.1',
-        isPremium: false, sortOrder: 1,
+        isPremium: true, sortOrder: 1,
         latitude: 35.6762, longitude: 139.6503,
       ),
       const ServerConfig(
@@ -221,7 +221,7 @@ class VPNService extends ChangeNotifier {
         countryCode: 'CA', endpoint: 'engage.cloudflareclient.com', port: 2408,
         publicKey: 'bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=',
         ipAddress: '162.159.201.1/32', dns: '1.1.1.1',
-        isPremium: false, sortOrder: 9,
+        isPremium: true, sortOrder: 9,
         latitude: 43.6532, longitude: -79.3832,
       ),
       const ServerConfig(
