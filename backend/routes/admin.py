@@ -109,7 +109,7 @@ def list_accounts(
             is_premium=acc.is_premium,
             premium_expires_at=acc.premium_expires_at,
             device_count=device_count,
-            max_devices=2,
+            max_devices=3,
             created_at=acc.created_at,
         ))
     return result
@@ -133,7 +133,7 @@ def get_account(
         is_premium=acc.is_premium,
         premium_expires_at=acc.premium_expires_at,
         device_count=device_count,
-        max_devices=2,
+        max_devices=3,
         created_at=acc.created_at,
     )
 

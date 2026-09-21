@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../services/vpn_service.dart';
 import '../services/account_service.dart';
+import '../services/premium_service.dart';
 import '../models/vpn_models.dart';
 import '../theme/app_theme.dart';
 import '../widgets/world_map.dart';
@@ -608,7 +609,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
               decoration: BoxDecoration(color: AppTheme.blue, borderRadius: BorderRadius.circular(2)),
               child: Text(
-                '\$3.99',
+                context.read<PremiumService>().plans.isNotEmpty
+                    ? context.read<PremiumService>().plans.first.priceDisplay
+                    : '\$3.99',
                 style: GoogleFonts.archivo(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700),
               ),
             ),

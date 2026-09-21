@@ -45,7 +45,7 @@ app.add_middleware(ApiKeyMiddleware)
 print(f"API key loaded: {APP_API_KEY[:8]}...")
 
 # 2. CORS: explicit origins, no wildcard + credentials
-ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
+ENVIRONMENT = os.getenv("ENVIRONMENT", "production")
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost,http://localhost:8080").split(",")
 
 if ENVIRONMENT == "development":
@@ -72,10 +72,16 @@ MAX_BODY_SIZE = 1 * 1024 * 1024  # 1 MB
 @app.middleware("http")
 async def limit_request_size(request: Request, call_next):
     content_length = request.headers.get("content-length")
-    if content_length and int(content_length) > MAX_BODY_SIZE:
+    try:
+        if content_length and int(content_length) > MAX_BODY_SIZE:
+            return JSONResponse(
+                status_code=413,
+                content={"detail": "Request body too large (max 1 MB)"},
+            )
+    except (ValueError, TypeError):
         return JSONResponse(
-            status_code=413,
-            content={"detail": "Request body too large (max 1 MB)"},
+            status_code=400,
+            content={"detail": "Invalid Content-Length header"},
         )
     return await call_next(request)
 

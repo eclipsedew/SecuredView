@@ -59,7 +59,12 @@ class PaystackService {
       );
     }
 
-    throw Exception('Verification failed');
+    String detail = 'Verification failed';
+    try {
+      final body = jsonDecode(resp.body);
+      detail = body['detail'] ?? body['message'] ?? detail;
+    } catch (_) {}
+    throw Exception(detail);
   }
 }
 

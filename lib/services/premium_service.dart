@@ -38,7 +38,16 @@ class PremiumService extends ChangeNotifier {
   Future<bool> restorePurchases(String accountId, {ApiService? api}) async {
     _isLoading = true;
     notifyListeners();
-    await Future.delayed(const Duration(seconds: 1));
+    try {
+      if (api != null) {
+        final status = await api.getPremiumStatus();
+        if (status.isPremium) {
+          _isLoading = false;
+          notifyListeners();
+          return true;
+        }
+      }
+    } catch (_) {}
     _isLoading = false;
     notifyListeners();
     return false;
