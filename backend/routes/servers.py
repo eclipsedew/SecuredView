@@ -33,23 +33,8 @@ def list_servers(
     account: Account = Depends(get_current_account),
     db: Session = Depends(get_db),
 ):
-    """List all active servers. Free users see only free servers."""
+    """List all active servers. Premium filter is client-side."""
     query = db.query(Server).filter(Server.is_active == True)
-
-    is_premium = False
-    if account:
-        exp = account.premium_expires_at
-        if exp and exp.tzinfo is None:
-            exp = exp.replace(tzinfo=timezone.utc)
-        is_premium = account.is_premium and exp and exp > datetime.now(timezone.utc)
-
-    if tier:
-        if tier == "premium" and not is_premium:
-            raise HTTPException(status_code=403, detail="Premium access required for premium servers")
-        query = query.filter(Server.tier == tier)
-    elif not is_premium:
-        query = query.filter(Server.tier == "free")
-
     servers = query.order_by(Server.country, Server.name).all()
     return servers
 

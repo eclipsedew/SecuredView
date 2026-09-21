@@ -9,7 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 class ApiService {
   static String get _defaultBaseUrl {
     if (kIsWeb) return 'http://localhost:8080';
-    if (Platform.isAndroid) return 'https://barriers-indicate-sewing-booking.trycloudflare.com';
+    if (Platform.isAndroid) return 'https://contribution-healthcare-dodge-flights.trycloudflare.com';
     return 'http://localhost:8080';
   }
 
