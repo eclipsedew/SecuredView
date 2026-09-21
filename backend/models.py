@@ -84,6 +84,7 @@ PREMIUM_PLANS = {
     "basic_30": {"name": "Basic", "days": 30, "price": 3.99, "max_devices": 3},
     "standard_60": {"name": "Standard", "days": 60, "price": 7.00, "max_devices": 3},
     "premium_90": {"name": "Premium", "days": 90, "price": 13.00, "max_devices": 3},
+    "annual_365": {"name": "Annual", "days": 365, "price": 30.00, "max_devices": 3},
 }
 
 # Currency for Paystack (must match merchant account)

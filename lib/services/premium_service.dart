@@ -7,6 +7,7 @@ class PremiumService extends ChangeNotifier {
     PremiumPlan(id: 'basic_30', name: 'Basic', days: 30, priceUSD: 3.99, priceDisplay: '\$3.99'),
     PremiumPlan(id: 'standard_60', name: 'Standard', days: 60, priceUSD: 7.00, priceDisplay: '\$7.00'),
     PremiumPlan(id: 'premium_90', name: 'Premium', days: 90, priceUSD: 13.00, priceDisplay: '\$13.00'),
+    PremiumPlan(id: 'annual_365', name: 'Annual', days: 365, priceUSD: 30.00, priceDisplay: '\$30.00'),
   ];
 
   List<PremiumPlan> _plans = defaultPlans;
