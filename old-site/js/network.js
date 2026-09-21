@@ -12,7 +12,6 @@
 
   /* city, code, country, cc, lat, lon, nodes, region, plot label on map */
   var SITES = [
-    ['Accra', 'ACC', 'Ghana', 'GH', 5.6, -0.19, 22, 'AF', 1],
     ['Lagos', 'LOS', 'Nigeria', 'NG', 6.52, 3.38, 26, 'AF', 0],
     ['Nairobi', 'NBO', 'Kenya', 'KE', -1.29, 36.82, 20, 'AF', 0],
     ['Johannesburg', 'JNB', 'South Africa', 'ZA', -26.2, 28.05, 34, 'AF', 1],

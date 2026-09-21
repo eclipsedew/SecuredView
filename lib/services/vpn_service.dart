@@ -216,6 +216,38 @@ class VPNService extends ChangeNotifier {
         isPremium: true, sortOrder: 8,
         latitude: 19.0760, longitude: 72.8777,
       ),
+      const ServerConfig(
+        id: 'ca-toronto', name: 'Canada Toronto', country: 'Canada',
+        countryCode: 'CA', endpoint: 'engage.cloudflareclient.com', port: 2408,
+        publicKey: 'bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=',
+        ipAddress: '162.159.201.1/32', dns: '1.1.1.1',
+        isPremium: false, sortOrder: 9,
+        latitude: 43.6532, longitude: -79.3832,
+      ),
+      const ServerConfig(
+        id: 'nl-amsterdam', name: 'Netherlands Amsterdam', country: 'Netherlands',
+        countryCode: 'NL', endpoint: 'engage.cloudflareclient.com', port: 2408,
+        publicKey: 'bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=',
+        ipAddress: '162.159.202.1/32', dns: '1.1.1.1',
+        isPremium: true, sortOrder: 10,
+        latitude: 52.3676, longitude: 4.9041,
+      ),
+      const ServerConfig(
+        id: 'kr-seoul', name: 'South Korea Seoul', country: 'South Korea',
+        countryCode: 'KR', endpoint: 'engage.cloudflareclient.com', port: 2408,
+        publicKey: 'bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=',
+        ipAddress: '162.159.203.1/32', dns: '1.1.1.1',
+        isPremium: true, sortOrder: 11,
+        latitude: 37.5665, longitude: 126.9780,
+      ),
+      const ServerConfig(
+        id: 'fr-paris', name: 'France Paris', country: 'France',
+        countryCode: 'FR', endpoint: 'engage.cloudflareclient.com', port: 2408,
+        publicKey: 'bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=',
+        ipAddress: '162.159.204.1/32', dns: '1.1.1.1',
+        isPremium: true, sortOrder: 12,
+        latitude: 48.8566, longitude: 2.3522,
+      ),
     ];
   }
 
