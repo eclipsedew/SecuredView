@@ -15,7 +15,8 @@ class ApiService {
   static const renderOriginUrl = 'https://securedview-api.onrender.com';
 
   /// Ordered fallbacks. First success is sticky via SharedPreferences.
-  static const List<String> apiBases = [publicTunnelUrl, renderOriginUrl];
+  /// Render first: mainland CN resets Vercel every time; never burn a try there.
+  static const List<String> apiBases = [renderOriginUrl, publicTunnelUrl];
 
   static const String _basePrefKey = 'api_base_preferred';
 
@@ -38,7 +39,7 @@ class ApiService {
   late http.Client _httpClient;
   http.Client get httpClient => _httpClient;
 
-  String _preferredBase = publicTunnelUrl;
+  String _preferredBase = renderOriginUrl;
 
   String get baseUrl => _preferredBase;
   String? get token => _token;
