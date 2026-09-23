@@ -97,14 +97,22 @@ jobs:
 
       - name: Package Windows
         run: |
-          cd artifacts/windows-build
+          # Flatten: artifact keeps build/windows/x64/runner/Release/... paths
+          mkdir -p pkg-windows
+          cp -a artifacts/windows-build/build/windows/x64/runner/Release/. pkg-windows/
+          cp -f artifacts/windows-build/vc_redist.x64.exe pkg-windows/ 2>/dev/null || true
+          cd pkg-windows
           echo "SecuredView VPN - Windows Build" > README.txt
           echo "" >> README.txt
           echo "1. Install vc_redist.x64.exe if you haven't already" >> README.txt
           echo "2. Run securedview.exe (Administrator — required for MASQUE TUN)" >> README.txt
           echo "3. usque.exe is the Cloudflare WARP MASQUE engine (bundled)" >> README.txt
           echo "4. Internet: uses the public API tunnel; create account / subscribe in-app" >> README.txt
-          zip -r ../../SecuredView-Windows.zip .
+          ls -la
+          test -f securedview.exe
+          test -f usque.exe
+          zip -r ../SecuredView-Windows.zip .
+          unzip -l ../SecuredView-Windows.zip | head -40
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
