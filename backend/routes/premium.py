@@ -6,6 +6,7 @@ from database import get_db
 from models import Account, Subscription, PREMIUM_PLANS
 from schemas import PlanInfo, PurchaseResponse, SubscriptionInfo
 from auth import get_current_account
+from billing import ensure_utc, run_due_billing
 from limiter import limiter
 
 router = APIRouter(prefix="/api/premium", tags=["premium"])
@@ -16,11 +17,7 @@ def _now_utc():
 
 
 def _ensure_utc(dt):
-    if dt is None:
-        return None
-    if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
-    return dt
+    return ensure_utc(dt)
 
 
 @router.get("/plans", response_model=list[PlanInfo])
@@ -36,17 +33,46 @@ def list_plans():
 
 
 @router.get("/status")
-def premium_status(account: Account = Depends(get_current_account)):
+def premium_status(
+    account: Account = Depends(get_current_account),
+    db: Session = Depends(get_db),
+):
+    # Exact clock: trial/paid end → access cut (never auto-charges)
+    try:
+        run_due_billing(db, account)
+        db.commit()
+    except Exception:
+        db.rollback()
+        db.refresh(account)
+
     now = _now_utc()
     exp = _ensure_utc(account.premium_expires_at)
-    is_active = account.is_premium and exp and exp > now
+    is_active = bool(account.is_premium and exp and exp > now)
+
     remaining = None
     if is_active:
         remaining = (exp - now).total_seconds()
+
+    trial_end = _ensure_utc(account.trial_ends_at)
+    trial_start = _ensure_utc(account.trial_started_at)
+    on_trial = bool(account.is_trial and is_active)
+    trial_remaining = None
+    if on_trial and trial_end:
+        trial_remaining = max(0.0, (trial_end - now).total_seconds())
+
     return {
         "is_premium": is_active,
         "expires_at": exp,
         "remaining_seconds": remaining,
+        "is_trial": on_trial,
+        "trial_started_at": trial_start,
+        "trial_ends_at": trial_end if on_trial else trial_end,
+        "trial_remaining_seconds": trial_remaining,
+        "billing_plan_id": account.billing_plan_id,
+        # Authoritative clock for clients (device time can be faked)
+        "server_time": now,
+        # No auto-renew — user subscribes manually after trial / period end
+        "auto_renew": False,
     }
 
 

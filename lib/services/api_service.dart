@@ -7,8 +7,9 @@ import 'package:http/io_client.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
-  /// Stable public API host — meridianglobal.site Vercel rewrites
-  /// `/api/*` (and `/health`) to the active Cloudflare quick tunnel → :8080.
+  /// Stable public API host — always this domain (never a tunnel URL).
+  /// Vercel rewrites `/api/*` and `/health` → Render `securedview-api.onrender.com`
+  /// (laptop can be off; backend runs on Render).
   static const publicTunnelUrl = 'https://meridianglobal.site';
 
   static String get _defaultBaseUrl {
@@ -85,6 +86,8 @@ class ApiService {
   }
 
   Future<void> clearAuth() async {
+    // Sign-out: drop session only. device_id + fingerprint seed stay so
+    // a "new account" on the same hardware cannot mint a second trial.
     _token = null;
     _accountId = null;
     await _prefs!.remove(_tokenKey);
@@ -92,10 +95,21 @@ class ApiService {
   }
 
   Future<void> clearAll() async {
+    // Full wipe (factory reset path) — still keep fingerprint seed if present
+    // so clear-data cannot farm trials. Android ANDROID_ID also survives.
+    final fpSeed = _prefs?.getString('device_fp_seed');
+    final did = _deviceId;
     _token = null;
     _accountId = null;
     _deviceId = null;
     await _prefs!.clear();
+    if (fpSeed != null) await _prefs!.setString('device_fp_seed', fpSeed);
+    if (did != null) await _prefs!.setString(_deviceIdKey, did);
+    _deviceId = did ?? _prefs!.getString(_deviceIdKey);
+    if (_deviceId == null) {
+      _deviceId = _generateDeviceId();
+      await _prefs!.setString(_deviceIdKey, _deviceId!);
+    }
   }
 
   Map<String, String> get _headers => {
@@ -144,6 +158,7 @@ class ApiService {
     required String pin,
     required String deviceName,
     required String platform,
+    String? fingerprint,
   }) async {
     final resp = await _httpClient.post(
       _uri('/api/accounts/register'),
@@ -153,6 +168,8 @@ class ApiService {
         'device_id': _deviceId,
         'device_name': deviceName,
         'platform': platform,
+        if (fingerprint != null && fingerprint.isNotEmpty)
+          'fingerprint': fingerprint,
       }),
     );
     final data = await _handleResponse(resp);
@@ -160,6 +177,10 @@ class ApiService {
     return RegisterResult(
       accountId: data['account_id'].toString().toUpperCase(),
       isPremium: data['is_premium'] ?? false,
+      isTrial: data['is_trial'] ?? false,
+      trialEndsAt: data['trial_ends_at'] != null
+          ? DateTime.tryParse(data['trial_ends_at'])
+          : null,
     );
   }
 
@@ -168,6 +189,7 @@ class ApiService {
     required String pin,
     required String deviceName,
     required String platform,
+    String? fingerprint,
   }) async {
     final resp = await _httpClient.post(
       _uri('/api/accounts/login'),
@@ -178,6 +200,8 @@ class ApiService {
         'device_id': _deviceId,
         'device_name': deviceName,
         'platform': platform,
+        if (fingerprint != null && fingerprint.isNotEmpty)
+          'fingerprint': fingerprint,
       }),
     );
     final data = await _handleResponse(resp);
@@ -272,13 +296,27 @@ class ApiException implements Exception {
 class RegisterResult {
   final String accountId;
   final bool isPremium;
-  RegisterResult({required this.accountId, required this.isPremium});
+  final bool isTrial;
+  final DateTime? trialEndsAt;
+  RegisterResult({
+    required this.accountId,
+    required this.isPremium,
+    this.isTrial = false,
+    this.trialEndsAt,
+  });
 }
 
 class LoginResult {
   final String accountId;
   final bool isPremium;
-  LoginResult({required this.accountId, required this.isPremium});
+  final bool isTrial;
+  final DateTime? trialEndsAt;
+  LoginResult({
+    required this.accountId,
+    required this.isPremium,
+    this.isTrial = false,
+    this.trialEndsAt,
+  });
 }
 
 class AccountInfo {
@@ -289,6 +327,8 @@ class AccountInfo {
   final int deviceCount;
   final int maxDevices;
   final DateTime createdAt;
+  final bool isTrial;
+  final DateTime? trialEndsAt;
 
   AccountInfo({
     required this.id,
@@ -298,6 +338,8 @@ class AccountInfo {
     required this.deviceCount,
     required this.maxDevices,
     required this.createdAt,
+    this.isTrial = false,
+    this.trialEndsAt,
   });
 
   factory AccountInfo.fromJson(Map<String, dynamic> json) => AccountInfo(
@@ -312,6 +354,10 @@ class AccountInfo {
         createdAt: json['created_at'] != null
             ? DateTime.parse(json['created_at'])
             : DateTime.now(),
+        isTrial: json['is_trial'] ?? false,
+        trialEndsAt: json['trial_ends_at'] != null
+            ? DateTime.tryParse(json['trial_ends_at'])
+            : null,
       );
 }
 
@@ -327,6 +373,7 @@ class ServerData {
   final bool isActive;
   final int speedMbps;
   final int pingMs;
+  final String? ipAddress;
 
   ServerData({
     required this.id, required this.name, required this.country,
@@ -334,6 +381,7 @@ class ServerData {
     required this.latitude, required this.longitude,
     required this.tier, required this.isActive,
     required this.speedMbps, required this.pingMs,
+    this.ipAddress,
   });
 
   factory ServerData.fromJson(Map<String, dynamic> json) => ServerData(
@@ -344,10 +392,12 @@ class ServerData {
         city: json['city'] ?? '',
         latitude: (json['latitude'] as num?)?.toDouble() ?? 0,
         longitude: (json['longitude'] as num?)?.toDouble() ?? 0,
-        tier: json['tier'] ?? 'free',
+        // Product rule: no free tier — treat missing/legacy free as paid.
+        tier: json['tier'] == 'free' ? 'premium' : (json['tier'] ?? 'premium'),
         isActive: json['is_active'] ?? true,
         speedMbps: json['speed_mbps'] ?? 100,
         pingMs: json['ping_ms'] ?? 20,
+        ipAddress: json['ip_address'] as String?,
       );
 }
 
@@ -377,13 +427,31 @@ class PremiumStatus {
   final bool isPremium;
   final DateTime? expiresAt;
   final double? remainingSeconds;
+  final bool isTrial;
+  final DateTime? trialEndsAt;
+  final double? trialRemainingSeconds;
+  final DateTime? serverTime;
 
-  PremiumStatus({required this.isPremium, this.expiresAt, this.remainingSeconds});
+  PremiumStatus({
+    required this.isPremium,
+    this.expiresAt,
+    this.remainingSeconds,
+    this.isTrial = false,
+    this.trialEndsAt,
+    this.trialRemainingSeconds,
+    this.serverTime,
+  });
 
   factory PremiumStatus.fromJson(Map<String, dynamic> json) => PremiumStatus(
         isPremium: json['is_premium'] ?? false,
         expiresAt: json['expires_at'] != null ? DateTime.tryParse(json['expires_at']) : null,
         remainingSeconds: (json['remaining_seconds'] as num?)?.toDouble(),
+        isTrial: json['is_trial'] ?? false,
+        trialEndsAt: json['trial_ends_at'] != null
+            ? DateTime.tryParse(json['trial_ends_at'])
+            : null,
+        trialRemainingSeconds: (json['trial_remaining_seconds'] as num?)?.toDouble(),
+        serverTime: json['server_time'] != null ? DateTime.tryParse(json['server_time']) : null,
       );
 }
 

@@ -130,8 +130,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           const SizedBox(height: 16),
         ],
 
-        // Upgrade bar
-        if (!account.isPremiumActive) _buildUpgradeBar(),
+        // Trial bar (connect now) or subscribe bar (no free tier — all 13 paid)
+        if (account.onTrial)
+          _buildTrialBar(account.account!)
+        else if (!account.isPremiumActive) _buildUpgradeBar(),
       ],
     );
   }
@@ -334,8 +336,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   void _showLocationPicker(VPNService vpn, AccountService account) {
-    final freeServers = vpn.allServers.where((s) => !s.isPremium).toList();
-    final premiumServers = vpn.allServers.where((s) => s.isPremium).toList();
+    final servers = vpn.allServers;
+    final locked = !account.isPremiumActive;
 
     showModalBottomSheet(
       context: context,
@@ -394,17 +396,16 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 ),
               ),
               const Divider(height: 1, color: AppTheme.line),
-              // Server list
+              // Server list — single paid catalog (no free/premium split)
               Expanded(
                 child: ListView(
                   controller: scrollController,
                   padding: const EdgeInsets.symmetric(vertical: 8),
                   children: [
-                    // Free servers
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                       child: Text(
-                        'FREE',
+                        locked ? 'ALL LOCATIONS — PLAN REQUIRED' : 'ALL LOCATIONS',
                         style: GoogleFonts.jetBrainsMono(
                           color: AppTheme.muted,
                           fontSize: 10,
@@ -413,21 +414,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         ),
                       ),
                     ),
-                    ...freeServers.map((s) => _buildPickerTile(vpn, s)),
-                    // Premium servers
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                      child: Text(
-                        'PREMIUM',
-                        style: GoogleFonts.jetBrainsMono(
-                          color: AppTheme.muted,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w500,
-                          letterSpacing: 1.7,
-                        ),
-                      ),
-                    ),
-                    ...premiumServers.map((s) => _buildPickerTile(vpn, s, isLocked: !account.isPremiumActive)),
+                    ...servers.map((s) => _buildPickerTile(vpn, s, isLocked: locked)),
                   ],
                 ),
               ),
@@ -567,6 +554,70 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
+  Widget _buildTrialBar(UserAccount account) {
+    final ends = account.trialEndsAt ?? account.premiumExpiry;
+    String left = '';
+    if (ends != null) {
+      final d = ends.difference(DateTime.now());
+      if (d.isNegative) {
+        left = 'ends soon';
+      } else if (d.inDays > 0) {
+        left = '${d.inDays}d ${d.inHours % 24}h left';
+      } else {
+        left = '${d.inHours}h ${d.inMinutes % 60}m left';
+      }
+    }
+    return GestureDetector(
+      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PremiumScreen())),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+        decoration: BoxDecoration(
+          color: AppTheme.blueWash,
+          borderRadius: BorderRadius.circular(3),
+          border: Border.all(color: AppTheme.blue.withValues(alpha: 0.35)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                color: AppTheme.surface,
+                borderRadius: BorderRadius.circular(2),
+              ),
+              child: const Icon(Icons.hourglass_top_rounded, color: AppTheme.blue, size: 18),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    left.isEmpty ? 'Free trial active' : 'Free trial — $left',
+                    style: GoogleFonts.archivo(color: AppTheme.ink, fontSize: 13, fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Connect now. Subscribe when ready (no auto-charge).',
+                    style: GoogleFonts.publicSans(color: AppTheme.muted, fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(color: AppTheme.blue, borderRadius: BorderRadius.circular(2)),
+              child: Text(
+                'Plans',
+                style: GoogleFonts.archivo(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildUpgradeBar() {
     return GestureDetector(
       onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PremiumScreen())),
@@ -599,7 +650,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    'Unlock all 9 server locations',
+                    'Subscribe to unlock all 13 locations',
                     style: GoogleFonts.publicSans(color: AppTheme.muted, fontSize: 12),
                   ),
                 ],
@@ -713,6 +764,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         if (!isLogin && pinController.text.length != 4) return;
                         if (isLogin && (accountIdController.text.isEmpty || loginPinController.text.length != 4)) return;
                         setSheetState(() { loading = true; localError = null; });
+                        final nav = Navigator.of(context);
                         final accountService = context.read<AccountService>();
                         final vpnService = context.read<VPNService>();
                         bool success;
@@ -723,7 +775,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         }
                         if (!mounted) return;
                         if (success) {
-                          Navigator.pop(context);
+                          nav.pop();
                           _animateConnect();
                           vpnService.connect();
                         } else {

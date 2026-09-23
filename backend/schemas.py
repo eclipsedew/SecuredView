@@ -27,15 +27,29 @@ def _validate_email(v: str) -> str:
 # ── Account ──────────────────────────────────────────────
 class AccountCreate(BaseModel):
     pin: str = Field(..., min_length=4, max_length=4, description="4-digit PIN")
+    # No email at signup — privacy. Email is only collected by Paystack
+    # if/when the user opens checkout for a receipt.
     device_id: str = Field(..., min_length=8, max_length=128, description="Unique device identifier")
     device_name: str = Field(default="Unknown Device", max_length=128)
     platform: str = Field(default="android", max_length=32)
+    # Hardware fingerprint (ANDROID_ID + model/brand hash) — anti trial farming
+    fingerprint: Optional[str] = Field(default=None, max_length=128)
 
     @field_validator("pin")
     @classmethod
     def pin_must_be_digits(cls, v):
         if not re.fullmatch(r"\d{4}", v):
             raise ValueError("PIN must be exactly 4 digits")
+        return v
+
+    @field_validator("fingerprint")
+    @classmethod
+    def fingerprint_hex(cls, v):
+        if v is None or v == "":
+            return None
+        v = v.strip().lower()
+        if not re.fullmatch(r"[a-f0-9]{16,128}", v):
+            raise ValueError("Fingerprint must be lowercase hex")
         return v
 
     @field_validator("device_id")
@@ -60,6 +74,17 @@ class AccountLogin(BaseModel):
     device_id: str = Field(..., min_length=8, max_length=128)
     device_name: str = Field(default="Unknown Device", max_length=128)
     platform: str = Field(default="android", max_length=32)
+    fingerprint: Optional[str] = Field(default=None, max_length=128)
+
+    @field_validator("fingerprint")
+    @classmethod
+    def fingerprint_hex(cls, v):
+        if v is None or v == "":
+            return None
+        v = v.strip().lower()
+        if not re.fullmatch(r"[a-f0-9]{16,128}", v):
+            raise ValueError("Fingerprint must be lowercase hex")
+        return v
 
     @field_validator("pin")
     @classmethod
@@ -93,6 +118,10 @@ class AccountInfo(BaseModel):
     device_count: int
     max_devices: int
     created_at: datetime
+    is_trial: bool = False
+    trial_started_at: Optional[datetime] = None
+    trial_ends_at: Optional[datetime] = None
+    billing_ready: bool = False
 
     class Config:
         from_attributes = True
@@ -103,6 +132,10 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
     account_id: str
     is_premium: bool
+    is_trial: bool = False
+    trial_ends_at: Optional[datetime] = None
+    next_autobill_at: Optional[datetime] = None
+    billing_ready: bool = False
 
 
 # ── Device ───────────────────────────────────────────────
@@ -167,16 +200,17 @@ class ServerCreate(BaseModel):
     port: int = Field(default=2408, ge=1, le=65535)
     latitude: float = Field(default=0.0, ge=-90, le=90)
     longitude: float = Field(default=0.0, ge=-180, le=180)
-    tier: str = Field(default="free")
+    tier: str = Field(default="premium")
     speed_mbps: int = Field(default=100, ge=1)
     ping_ms: int = Field(default=20, ge=0)
 
     @field_validator("tier")
     @classmethod
     def tier_must_be_valid(cls, v):
-        if v not in ("free", "premium"):
-            raise ValueError("tier must be 'free' or 'premium'")
-        return v
+        # No free tier — every location is paid (trial unlocks them).
+        if v not in ("premium", "free"):
+            raise ValueError("tier must be 'premium'")
+        return "premium"
 
 
 class ServerUpdate(BaseModel):
@@ -193,6 +227,14 @@ class ServerUpdate(BaseModel):
     load_percent: Optional[float] = Field(None, ge=0, le=100)
     speed_mbps: Optional[int] = Field(None, ge=1)
     ping_ms: Optional[int] = Field(None, ge=0)
+
+    @field_validator("tier")
+    @classmethod
+    def tier_must_be_valid(cls, v):
+        if v is None:
+            return None
+        # No free tier — coerce any admin/legacy value to premium.
+        return "premium"
 
 
 class UpdateName(BaseModel):

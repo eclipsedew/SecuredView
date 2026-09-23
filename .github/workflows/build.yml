@@ -17,6 +17,19 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+      - name: Stamp build number into app_version.dart
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("lib/app_version.dart")
+          text = p.read_text()
+          import re
+          build = "${{ github.run_number }}"
+          text = re.sub(r"const int kBuildNumber = \d+;", f"const int kBuildNumber = {build};", text)
+          p.write_text(text)
+          print(p.read_text())
+          PY
       - run: flutter build linux --release
       - uses: actions/upload-artifact@v4
         with:
@@ -30,6 +43,19 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+      - name: Stamp build number into app_version.dart
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          p = Path("lib/app_version.dart")
+          text = p.read_text()
+          build = "${{ github.run_number }}"
+          text = re.sub(r"const int kBuildNumber = \d+;", f"const int kBuildNumber = {build};", text)
+          p.write_text(text)
+          print(p.read_text())
+          PY
       - uses: actions/setup-go@v5
         with:
           go-version: '1.26'
@@ -72,6 +98,19 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+      - name: Stamp build number into app_version.dart
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          p = Path("lib/app_version.dart")
+          text = p.read_text()
+          build = "${{ github.run_number }}"
+          text = re.sub(r"const int kBuildNumber = \d+;", f"const int kBuildNumber = {build};", text)
+          p.write_text(text)
+          print(p.read_text())
+          PY
       - run: flutter pub get
       - run: flutter build apk --release
       - uses: actions/upload-artifact@v4

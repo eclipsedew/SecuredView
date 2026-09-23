@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import '../app_version.dart';
 import '../services/vpn_service.dart';
 import '../services/account_service.dart';
+import '../services/support_service.dart';
+import '../services/update_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/securedview_logo.dart';
 import 'account_screen.dart';
@@ -11,13 +14,87 @@ import 'premium_screen.dart';
 import 'tos_screen.dart';
 import 'privacy_screen.dart';
 
-class SettingsScreen extends StatelessWidget {
+class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
+
+  @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // Check after first frame so Provider is ready
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final svc = context.read<UpdateService>();
+      if (!svc.promptShownThisSession) {
+        svc.check().then((_) {
+          if (mounted && svc.hasUpdate) _showUpdateDialog(svc.pending!);
+        });
+      }
+    });
+  }
+
+  Future<void> _showUpdateDialog(UpdateInfo info) async {
+    final ups = context.read<UpdateService>();
+    ups.markPromptShown();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Update available'),
+        content: Text(
+          'Version $kAppVersion (build $kBuildNumber) → ${info.label}\n\n'
+          'Install the latest release to stay current.',
+          style: GoogleFonts.publicSans(fontSize: 14, height: 1.45),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Later', style: GoogleFonts.publicSans(color: AppTheme.muted)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Update'),
+          ),
+        ],
+      ),
+    );
+    if (ok == true && mounted) {
+      final launched = await ups.install(info);
+      if (!launched && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not open download — ${info.htmlUrl}')),
+        );
+      }
+    }
+  }
+
+  Future<void> _checkUpdates() async {
+    final svc = context.read<UpdateService>();
+    final info = await svc.check(force: true);
+    if (!mounted) return;
+    if (info != null && svc.hasUpdate) {
+      await _showUpdateDialog(info);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            svc.lastError ?? 'You are on the latest version ($kVersionLabel)',
+            style: GoogleFonts.publicSans(),
+          ),
+        ),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final vpn = context.watch<VPNService>();
     final account = context.watch<AccountService>();
+    final updates = context.watch<UpdateService>();
+    final hasUpdate = updates.hasUpdate;
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
@@ -80,7 +157,7 @@ class SettingsScreen extends StatelessWidget {
             : [
                 _actionTile(Icons.person_add_outlined, 'Create Account', () => _createAccount(context, account)),
                 const Divider(height: 1, color: AppTheme.line, indent: 0, endIndent: 0),
-                _actionTile(Icons.workspace_premium_outlined, 'Upgrade', () =>
+                _actionTile(Icons.workspace_premium_outlined, 'Start Free Trial / Plans', () =>
                     Navigator.push(context, MaterialPageRoute(builder: (_) => const PremiumScreen())), isAccent: true),
               ]),
 
@@ -90,7 +167,28 @@ class SettingsScreen extends StatelessWidget {
         _buildSectionLabel('About'),
         const SizedBox(height: 10),
         _buildCard([
-          _infoTile(Icons.info_outline_rounded, 'Version', '1.0.0'),
+          _infoTile(
+            Icons.info_outline_rounded,
+            'Version',
+            hasUpdate ? '$kVersionLabel · Update' : kVersionLabel,
+          ),
+          const Divider(height: 1, color: AppTheme.line, indent: 0, endIndent: 0),
+          _actionTile(
+            hasUpdate ? Icons.system_update_alt_rounded : Icons.refresh_rounded,
+            hasUpdate ? 'Update Available' : 'Check for Updates',
+            _checkUpdates,
+            isAccent: hasUpdate,
+          ),
+          const Divider(height: 1, color: AppTheme.line, indent: 0, endIndent: 0),
+          _actionTile(Icons.bug_report_outlined, 'Report a Bug', () {
+            SupportService.reportBug();
+          }),
+          const Divider(height: 1, color: AppTheme.line, indent: 0, endIndent: 0),
+          _actionTile(Icons.lightbulb_outline_rounded, 'Send a Suggestion', () {
+            SupportService.sendSuggestion();
+          }),
+          const Divider(height: 1, color: AppTheme.line, indent: 0, endIndent: 0),
+          _infoTile(Icons.mail_outline_rounded, 'Support', SupportService.email),
           const Divider(height: 1, color: AppTheme.line, indent: 0, endIndent: 0),
           _actionTile(Icons.description_outlined, 'Terms of Service', () {
             Navigator.push(context, MaterialPageRoute(builder: (_) => const TOSScreen()));
@@ -161,7 +259,9 @@ class SettingsScreen extends StatelessWidget {
                   Row(
                     children: [
                       Text(
-                        isPremium ? 'Premium Account' : 'Free Account',
+                            isPremium
+                                ? (acc.onTrial ? 'Trial Account' : 'Premium Account')
+                                : 'No Active Plan',
                         style: GoogleFonts.archivo(
                           color: AppTheme.ink,
                           fontWeight: FontWeight.w600,

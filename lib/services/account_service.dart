@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/vpn_models.dart';
 import 'api_service.dart';
+import 'device_fingerprint.dart';
 
 class AccountService extends ChangeNotifier {
   static const String _accountKey = 'user_account';
@@ -19,6 +20,9 @@ class AccountService extends ChangeNotifier {
   bool get isInitialized => _isInitialized;
   bool get hasAccount => _account != null;
   bool get isPremiumActive => _account?.isPremiumActive ?? false;
+  bool get onTrial => _account?.onTrial ?? false;
+  DateTime? get entitlementEndsAt =>
+      _account?.premiumExpiry ?? _account?.trialEndsAt;
   bool get pinSetupComplete => _pinSetupComplete;
   String? get error => _error;
 
@@ -41,6 +45,8 @@ class AccountService extends ChangeNotifier {
           premiumExpiry: info.premiumExpiresAt,
           deviceCount: info.deviceCount,
           createdAt: info.createdAt,
+          isTrial: info.isTrial,
+          trialEndsAt: info.trialEndsAt,
         );
         await _saveAccountLocal(prefs);
         _error = null;
@@ -74,7 +80,7 @@ class AccountService extends ChangeNotifier {
     }
   }
 
-  /// Register with a user-set PIN. No default PIN.
+  /// Register with a user-set PIN. No email (privacy) — Paystack asks at checkout only.
   Future<bool> createAccount(String pin) async {
     if (pin.length != 4 || !RegExp(r'^\d{4}$').hasMatch(pin)) {
       _error = 'PIN must be exactly 4 digits';
@@ -85,16 +91,21 @@ class AccountService extends ChangeNotifier {
     final platform = _getPlatformName();
 
     try {
+      final fp = await DeviceFingerprint.get();
       final result = await _api.register(
         pin: pin,
         deviceName: platform,
         platform: platform,
+        fingerprint: fp,
       );
       _account = UserAccount(
         accountId: result.accountId,
         tier: result.isPremium ? SubscriptionTier.premium : SubscriptionTier.free,
+        premiumExpiry: result.trialEndsAt,
         deviceIds: [_api.deviceId ?? 'unknown'],
         createdAt: DateTime.now(),
+        isTrial: result.isTrial,
+        trialEndsAt: result.trialEndsAt,
       );
       _error = null;
     } on ApiException catch (e) {
@@ -125,17 +136,22 @@ class AccountService extends ChangeNotifier {
   Future<bool> loginWithPin(String accountId, String pin) async {
     final platform = _getPlatformName();
     try {
+      final fp = await DeviceFingerprint.get();
       final result = await _api.login(
         accountId: accountId.trim().toUpperCase(),
         pin: pin,
         deviceName: platform,
         platform: platform,
+        fingerprint: fp,
       );
       _account = UserAccount(
         accountId: result.accountId,
         tier: result.isPremium ? SubscriptionTier.premium : SubscriptionTier.free,
+        premiumExpiry: result.trialEndsAt,
         deviceIds: [_api.deviceId ?? 'unknown'],
         createdAt: DateTime.now(),
+        isTrial: result.isTrial,
+        trialEndsAt: result.trialEndsAt,
       );
       _error = null;
       final prefs = await SharedPreferences.getInstance();
@@ -169,6 +185,8 @@ class AccountService extends ChangeNotifier {
       _account = _account!.copyWith(
         tier: status.isPremium ? SubscriptionTier.premium : SubscriptionTier.free,
         premiumExpiry: status.expiresAt,
+        isTrial: status.isTrial,
+        trialEndsAt: status.trialEndsAt,
       );
       await _saveAccountLocal(await SharedPreferences.getInstance());
       notifyListeners();
@@ -186,6 +204,16 @@ class AccountService extends ChangeNotifier {
     _pinSetupComplete = false;
     notifyListeners();
   }
+
+  /// Local entitlement check (no network) — true if trial/paid already ended.
+  bool entitlementExpiredLocally() {
+    final end = entitlementEndsAt;
+    if (end == null) return false;
+    return !DateTime.now().isBefore(end);
+  }
+
+  /// External callers (app clock) can force a notify so watchers re-check.
+  void recheckEntitlement() => notifyListeners();
 
   Future<void> _saveAccountLocal(SharedPreferences prefs) async {
     if (_account == null) return;
@@ -211,6 +239,8 @@ extension UserAccountCopyWith on UserAccount {
     List<String>? deviceIds,
     DateTime? createdAt,
     int? deviceCount,
+    bool? isTrial,
+    DateTime? trialEndsAt,
   }) {
     return UserAccount(
       accountId: accountId ?? this.accountId,
@@ -219,6 +249,8 @@ extension UserAccountCopyWith on UserAccount {
       deviceIds: deviceIds ?? this.deviceIds,
       createdAt: createdAt ?? this.createdAt,
       deviceCount: deviceCount ?? this.deviceCount,
+      isTrial: isTrial ?? this.isTrial,
+      trialEndsAt: trialEndsAt ?? this.trialEndsAt,
     );
   }
 }

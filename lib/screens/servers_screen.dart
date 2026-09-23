@@ -14,16 +14,12 @@ class ServersScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final vpn = context.watch<VPNService>();
     final account = context.watch<AccountService>();
-
-    final freeServers = vpn.availableServers;
-    final premiumServers = vpn.allServers
-        .where((s) => !vpn.availableServers.any((a) => a.id == s.id))
-        .toList();
+    final entitled = account.isPremiumActive;
+    final servers = vpn.allServers;
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
       children: [
-        // Section header — matches website .sec-head
         Text(
           'LOCATIONS',
           style: GoogleFonts.jetBrainsMono(
@@ -35,24 +31,12 @@ class ServersScreen extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         Text(
-          account.isPremiumActive
-              ? 'All ${vpn.allServers.length} server locations available'
-              : '${freeServers.length} free locations, ${premiumServers.length} premium',
+          entitled
+              ? 'All ${servers.length} locations available on your plan'
+              : 'All ${servers.length} locations require an active trial or plan',
           style: GoogleFonts.publicSans(color: AppTheme.ink2, fontSize: 14),
         ),
         const SizedBox(height: 28),
-
-        // Free section
-        Text(
-          'FREE',
-          style: GoogleFonts.jetBrainsMono(
-            color: AppTheme.muted,
-            fontSize: 10,
-            fontWeight: FontWeight.w500,
-            letterSpacing: 1.7,
-          ),
-        ),
-        const SizedBox(height: 10),
         Container(
           decoration: BoxDecoration(
             border: Border.all(color: AppTheme.line2),
@@ -60,50 +44,15 @@ class ServersScreen extends StatelessWidget {
           ),
           child: Column(
             children: [
-              for (int i = 0; i < freeServers.length; i++) ...[
+              for (int i = 0; i < servers.length; i++) ...[
                 _buildServerRow(
                   context: context,
                   vpn: vpn,
-                  server: freeServers[i],
-                  isSelected: vpn.currentServer?.id == freeServers[i].id,
-                  isLocked: false,
+                  server: servers[i],
+                  isSelected: vpn.currentServer?.id == servers[i].id,
+                  isLocked: !entitled,
                 ),
-                if (i < freeServers.length - 1)
-                  const Divider(height: 1, color: AppTheme.line, indent: 0, endIndent: 0),
-              ],
-            ],
-          ),
-        ),
-
-        const SizedBox(height: 28),
-
-        // Premium section
-        Text(
-          'PREMIUM',
-          style: GoogleFonts.jetBrainsMono(
-            color: AppTheme.muted,
-            fontSize: 10,
-            fontWeight: FontWeight.w500,
-            letterSpacing: 1.7,
-          ),
-        ),
-        const SizedBox(height: 10),
-        Container(
-          decoration: BoxDecoration(
-            border: Border.all(color: AppTheme.line2),
-            borderRadius: BorderRadius.circular(3),
-          ),
-          child: Column(
-            children: [
-              for (int i = 0; i < premiumServers.length; i++) ...[
-                _buildServerRow(
-                  context: context,
-                  vpn: vpn,
-                  server: premiumServers[i],
-                  isSelected: vpn.currentServer?.id == premiumServers[i].id,
-                  isLocked: !account.isPremiumActive,
-                ),
-                if (i < premiumServers.length - 1)
+                if (i < servers.length - 1)
                   const Divider(height: 1, color: AppTheme.line, indent: 0, endIndent: 0),
               ],
             ],
@@ -136,7 +85,6 @@ class ServersScreen extends StatelessWidget {
           color: isSelected ? AppTheme.blueWash : null,
           child: Row(
             children: [
-              // Country code — mono font
               SizedBox(
                 width: 36,
                 child: Text(
@@ -150,7 +98,6 @@ class ServersScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 14),
-              // Server name
               Expanded(
                 child: Text(
                   server.name,
@@ -161,7 +108,6 @@ class ServersScreen extends StatelessWidget {
                   ),
                 ),
               ),
-              // Status
               if (isSelected)
                 Icon(Icons.check_circle_rounded, color: AppTheme.blue, size: 18)
               else if (isLocked)

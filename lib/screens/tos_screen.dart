@@ -19,11 +19,11 @@ class TOSScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          _section('Terms of Service', 'Last updated: September 19, 2026'),
+          _section('Terms of Service', 'Last updated: September 23, 2026'),
           _section('1. Acceptance of Terms',
             'By downloading, installing, or using SecuredView VPN ("the App"), you agree to be bound by these Terms of Service ("Terms"). If you do not agree to these Terms, do not use the App.'),
           _section('2. Description of Service',
-            'SecuredView VPN provides a virtual private network (VPN) service that routes your internet traffic through encrypted tunnels. The App uses Cloudflare WARP technology to establish secure connections. Free accounts are limited to 2 server locations. Premium accounts unlock all server locations and additional features.'),
+            'SecuredView VPN provides a virtual private network (VPN) service that routes your internet traffic through encrypted tunnels. The App uses Cloudflare WARP technology to establish secure connections. All 13 server locations require an active free trial or paid plan. There is no free server tier.'),
           _section('3. Account Registration',
             'To use the App, you must create an account with a 4-digit PIN. You are responsible for maintaining the confidentiality of your account credentials. You must be at least 13 years of age to create an account. You are responsible for all activity that occurs under your account.'),
           _section('4. Acceptable Use',
@@ -36,7 +36,14 @@ class TOSScreen extends StatelessWidget {
             '• Exceed the device limit associated with your subscription tier\n'
             '• Resell or redistribute access to the App'),
           _section('5. Subscriptions and Payments',
-            'Premium subscriptions are available for purchase within the App. All payments are processed through our payment processor (Paystack). Prices are listed in USD and may vary by region. Subscriptions auto-renew unless cancelled. You may cancel at any time through the App settings. Refunds are handled in accordance with applicable law and our refund policy.'),
+            'New accounts receive a free 3-day trial from the moment the account is created. '
+            'No payment is required to create an account or use the trial. '
+            'After the trial ends, server access stops until you purchase a plan — there is no free tier. '
+            'Premium plans are one-time purchases for the listed duration (30/60/90/365 days). '
+            'Payments are processed by Paystack on their hosted checkout; we never store card numbers and do not auto-charge or auto-renew. '
+            'You may buy another plan at any time (including during trial — remaining trial time is preserved). '
+            'Entitlement is verified against our servers; changing your device clock does not extend access. '
+            'Prices are listed in USD and may vary by region. Refunds are handled in accordance with applicable law and our refund policy.'),
           _section('6. Privacy',
             'Your use of the App is also governed by our Privacy Policy, which describes how we collect, use, and protect your personal information. By using the App, you consent to the data practices described in the Privacy Policy.'),
           _section('7. Disclaimer of Warranties',
@@ -52,7 +59,7 @@ class TOSScreen extends StatelessWidget {
           _section('12. Governing Law',
             'These Terms are governed by and construed in accordance with applicable laws. Any disputes shall be resolved through binding arbitration or in courts of competent jurisdiction.'),
           _section('13. Contact',
-            'If you have questions about these Terms, please contact us at support@securedview.com.'),
+            'If you have questions about these Terms, please contact us at securedviewvpn@protonmail.com.'),
           const SizedBox(height: 40),
         ],
       ),

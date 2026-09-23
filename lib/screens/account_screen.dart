@@ -79,7 +79,9 @@ class AccountScreen extends StatelessWidget {
           const SecuredViewLogo(size: 40),
           const SizedBox(height: 12),
           Text(
-            isPremium ? 'Premium Active' : 'Free Account',
+            isPremium
+                ? (acc.onTrial ? 'Free Trial Active' : 'Premium Active')
+                : 'No Active Plan',
             style: GoogleFonts.archivo(
               fontWeight: FontWeight.w600,
               fontSize: 16,
@@ -89,7 +91,9 @@ class AccountScreen extends StatelessWidget {
           if (isPremium && acc.premiumExpiry != null) ...[
             const SizedBox(height: 4),
             Text(
-              'Expires ${_formatDate(acc.premiumExpiry!)}',
+              acc.onTrial
+                  ? 'Trial ends ${_formatDate(acc.premiumExpiry!)} — subscribe anytime'
+                  : 'Expires ${_formatDate(acc.premiumExpiry!)}',
               style: GoogleFonts.publicSans(color: AppTheme.muted, fontSize: 12),
             ),
           ],
@@ -300,7 +304,7 @@ class AccountScreen extends StatelessWidget {
                 )
               : ElevatedButton(
                   onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PremiumScreen())),
-                  child: Text('Upgrade to Premium', style: GoogleFonts.archivo(fontWeight: FontWeight.w600)),
+                  child: Text('Subscribe', style: GoogleFonts.archivo(fontWeight: FontWeight.w600)),
                 ),
         ),
         const SizedBox(height: 8),

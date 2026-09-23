@@ -236,8 +236,8 @@ class _DotMapPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final svgW = 1440.0;
-    final svgH = 580.0;
+    const svgW = 1440.0;
+    const svgH = 580.0;
     final scaleX = size.width / svgW;
     final scaleY = size.height / svgH;
 

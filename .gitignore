@@ -44,3 +44,8 @@ backend/*.db-journal
 
 # account snapshots (contain PIN hashes) — inject as SEED_DATA on Render, never commit
 backend/seed.json
+.render_deploy
+.render_api_key
+render_api_key
+.render_db_url
+backend/.paystack_plans.json

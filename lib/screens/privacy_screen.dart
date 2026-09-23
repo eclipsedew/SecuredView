@@ -24,8 +24,9 @@ class PrivacyScreen extends StatelessWidget {
             'SecuredView VPN ("we", "us", or "our") is committed to protecting your privacy. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you use our mobile application and related services (collectively, "the App").'),
           _section('2. Information We Collect',
             'We collect the following types of information:\n\n'
-            'Account Information: When you create an account, we store a hashed version of your 4-digit PIN and a unique account identifier. We do not collect your name, email, or phone number.\n\n'
-            'Device Information: We store a device identifier to enforce device limits (2 devices per account). We also record the device platform (Android, iOS, Linux, etc.) and device name for your reference.\n\n'
+            'Account Information: When you create an account, we store a hashed version of your 4-digit PIN and a unique account identifier. We do not collect your name, email, or phone number at signup. Email is requested only by our payment provider when you choose to purchase a plan, for the receipt.\n\n'
+            'Device Information: We store a device identifier and a hashed hardware fingerprint (Android ID + device model) solely to enforce device limits and prevent free-trial abuse. This stays on the device account record and is never sold.\n\n'
+            'Free Trial: Premium trials run for exactly 3 days from account creation. When the trial ends, server access stops until you purchase a plan (there is no free tier). We do not store card numbers and never auto-charge — subscriptions are one-time purchases through Paystack’s hosted checkout. Entitlement is checked against our servers; device clock changes cannot extend access.\n\n'
             'Subscription Information: If you purchase a premium subscription, we store your subscription status, plan details, and expiration date. Payment information is processed by Paystack and is never stored on our servers.\n\n'
             'Connection Data: We do NOT log your internet traffic, browsing history, DNS queries, or the content of your communications. We do not log your original IP address or the IP addresses you connect to through our servers.\n\n'
             'Usage Data: We may collect anonymized, aggregated statistics such as total number of accounts, devices, and servers to improve the service.'),
@@ -66,7 +67,7 @@ class PrivacyScreen extends StatelessWidget {
           _section('10. Changes to This Policy',
             'We may update this Privacy Policy from time to time. Material changes will be communicated through the App or via email. The "Last updated" date at the top indicates when this policy was last revised.'),
           _section('11. Contact Us',
-            'If you have questions about this Privacy Policy or wish to exercise your rights, please contact us at privacy@securedview.com.'),
+            'If you have questions about this Privacy Policy or wish to exercise your rights, please contact us at securedviewvpn@protonmail.com.'),
           const SizedBox(height: 40),
         ],
       ),

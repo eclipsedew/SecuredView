@@ -50,8 +50,7 @@ class PremiumScreen extends StatelessWidget {
           }),
           const SizedBox(height: 32),
 
-          // Free vs Premium comparison
-          _buildComparison(),
+          _buildWhatYouGet(),
           const SizedBox(height: 40),
         ],
       ),
@@ -83,8 +82,10 @@ class PremiumScreen extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            '9 locations worldwide. No ads. 3 devices.',
-            style: GoogleFonts.publicSans(color: AppTheme.muted, fontSize: 14),
+            'New accounts get a free 3-day trial with full access to all 13 locations.\n'
+            'After the trial, a paid plan is required. Subscribe through Paystack\n'
+            '(one-time payment; no auto-charge, no card stored).',
+            style: GoogleFonts.publicSans(color: AppTheme.muted, fontSize: 13, height: 1.45),
             textAlign: TextAlign.center,
           ),
         ],
@@ -168,18 +169,18 @@ class PremiumScreen extends StatelessWidget {
             width: double.infinity,
             height: 44,
             child: ElevatedButton(
-              onPressed: account.isPremiumActive
-                  ? null
-                  : () => _purchase(context, account, premium, plan),
+              // Subscribe stays enabled during trial so user can pay through the VPN
+              onPressed: () => _purchase(context, account, premium, plan),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppTheme.blue,
-                disabledBackgroundColor: AppTheme.muted,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(2)),
               ),
               child: premium.isLoading
                   ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                   : Text(
-                      account.isPremiumActive ? 'Active' : 'Subscribe',
+                      account.onTrial
+                          ? 'Subscribe before trial ends'
+                          : (account.isPremiumActive ? 'Extend / renew' : 'Subscribe'),
                       style: GoogleFonts.archivo(color: Colors.white, fontWeight: FontWeight.w600),
                     ),
             ),
@@ -189,12 +190,12 @@ class PremiumScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildComparison() {
+  Widget _buildWhatYouGet() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'FREE VS PREMIUM',
+          'WHAT YOU GET',
           style: GoogleFonts.jetBrainsMono(
             color: AppTheme.muted,
             fontSize: 10,
@@ -203,67 +204,50 @@ class PremiumScreen extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 14),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(child: _buildColumn('Free', [
-              '2 locations',
-              'AES-256 encryption',
-              'Kill switch',
-              'No-logs policy',
-              'Ads shown',
-              '1 device',
-            ])),
-            const SizedBox(width: 12),
-            Expanded(child: _buildColumn('Premium', [
-              'All 9 locations',
-              'AES-256 encryption',
-              'Kill switch',
-              'No-logs policy',
-              'No ads',
-              '2 devices',
-            ], isPremium: true)),
-          ],
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: AppTheme.surface,
+            borderRadius: BorderRadius.circular(3),
+            border: Border.all(color: AppTheme.blue),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'SecuredView Plan',
+                style: GoogleFonts.archivo(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                  color: AppTheme.blue,
+                ),
+              ),
+              const SizedBox(height: 12),
+              ...[
+                'All 13 server locations',
+                '3-day free trial on signup',
+                'AES-256 encryption · Kill switch',
+                'No-logs policy · No ads',
+                'Up to 3 devices',
+                'One-time payment · No auto-charge',
+              ].map((f) => Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.check_rounded, color: AppTheme.signal, size: 14),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(f, style: GoogleFonts.publicSans(color: AppTheme.ink2, fontSize: 12)),
+                        ),
+                      ],
+                    ),
+                  )),
+            ],
+          ),
         ),
       ],
-    );
-  }
-
-  Widget _buildColumn(String title, List<String> features, {bool isPremium = false}) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppTheme.surface,
-        borderRadius: BorderRadius.circular(3),
-        border: Border.all(color: isPremium ? AppTheme.blue : AppTheme.line2),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: GoogleFonts.archivo(
-              fontWeight: FontWeight.w600,
-              fontSize: 13,
-              color: isPremium ? AppTheme.blue : AppTheme.muted,
-            ),
-          ),
-          const SizedBox(height: 12),
-          ...features.map((f) => Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(Icons.check_rounded, color: AppTheme.signal, size: 14),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(f, style: GoogleFonts.publicSans(color: AppTheme.ink2, fontSize: 12)),
-                ),
-              ],
-            ),
-          )),
-        ],
-      ),
     );
   }
 

@@ -3,7 +3,7 @@ import uuid
 import secrets
 from datetime import datetime, timezone
 from sqlalchemy import (
-    Column, String, Integer, Float, Boolean, DateTime, ForeignKey, Text
+    Column, String, Integer, Float, Boolean, DateTime, ForeignKey, Text, UniqueConstraint
 )
 from sqlalchemy.orm import relationship
 from database import Base
@@ -23,6 +23,25 @@ class Account(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     is_premium = Column(Boolean, default=False)
     premium_expires_at = Column(DateTime, nullable=True)
+    # Trial / paid plan (3-day trial from account creation → manual Paystack purchase)
+    email = Column(String(254), nullable=True, index=True)
+    trial_started_at = Column(DateTime, nullable=True)
+    trial_ends_at = Column(DateTime, nullable=True)
+    is_trial = Column(Boolean, default=False)
+    paystack_customer_code = Column(String(64), nullable=True)
+    paystack_authorization_code = Column(String(64), nullable=True)
+    paystack_authorization_reusable = Column(Boolean, default=False)
+    paystack_subscription_code = Column(String(64), nullable=True)
+    billing_plan_id = Column(String(32), nullable=True)
+    billing_ready = Column(Boolean, default=False)
+    last_billing_attempt_at = Column(DateTime, nullable=True)
+    # Exact auto-bill clock (UTC). Set at trial arm; advanced after each success.
+    next_autobill_at = Column(DateTime, nullable=True, index=True)
+    billing_failures = Column(Integer, default=0)
+    billing_stopped = Column(Boolean, default=False)
+    billing_stop_reason = Column(String(64), nullable=True)
+    # Hardware fingerprint hash (survives sign-out; set on first register)
+    device_fingerprint = Column(String(128), nullable=True, index=True)
 
     devices = relationship("Device", back_populates="account", cascade="all, delete-orphan")
     subscriptions = relationship("Subscription", back_populates="account", cascade="all, delete-orphan")
@@ -43,6 +62,24 @@ class Device(Base):
     account = relationship("Account", back_populates="devices")
 
 
+class TrialClaim(Base):
+    """Permanent anti-abuse ledger: one free trial per device (and soft per-IP).
+
+    Rows are NEVER cascade-deleted with accounts — delete/recreate cannot
+    mint a second trial on the same device fingerprint.
+    """
+    __tablename__ = "trial_claims"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    device_key = Column(String(128), nullable=False, unique=True, index=True)
+    ip_key = Column(String(64), nullable=True, index=True)
+    account_id = Column(String(16), nullable=True, index=True)  # no FK — survives account delete
+    email = Column(String(254), nullable=True)
+    claimed_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    # Extra hardware attrs for forensics (never used as sole key alone)
+    fingerprint = Column(String(128), nullable=True, index=True)
+
+
 class Server(Base):
     __tablename__ = "servers"
 
@@ -55,7 +92,7 @@ class Server(Base):
     port = Column(Integer, default=2408)
     latitude = Column(Float, default=0.0)
     longitude = Column(Float, default=0.0)
-    tier = Column(String(16), default="free")
+    tier = Column(String(16), default="premium")  # no free tier — trial unlocks all
     is_active = Column(Boolean, default=True)
     load_percent = Column(Float, default=0.0)
     speed_mbps = Column(Integer, default=100)
@@ -79,12 +116,13 @@ class Subscription(Base):
     account = relationship("Account", back_populates="subscriptions")
 
 
-# Premium plans config (prices displayed in USD)
+# Premium plans (one-time purchases; no auto-renew). After the 3-day trial
+# every location requires an active plan — there is no free server tier.
 PREMIUM_PLANS = {
-    "basic_30": {"name": "Basic", "days": 30, "price": 3.99, "max_devices": 3},
-    "standard_60": {"name": "Standard", "days": 60, "price": 7.00, "max_devices": 3},
-    "premium_90": {"name": "Premium", "days": 90, "price": 13.00, "max_devices": 3},
-    "annual_365": {"name": "Annual", "days": 365, "price": 30.00, "max_devices": 3},
+    "basic_30": {"name": "Basic", "days": 30, "price": 3.99, "max_devices": 3, "interval": "monthly"},
+    "standard_60": {"name": "Standard", "days": 60, "price": 7.00, "max_devices": 3, "interval": "monthly"},
+    "premium_90": {"name": "Premium", "days": 90, "price": 13.00, "max_devices": 3, "interval": "monthly"},
+    "annual_365": {"name": "Annual", "days": 365, "price": 30.00, "max_devices": 3, "interval": "annually"},
 }
 
 # Currency for Paystack (must match merchant account)
@@ -95,3 +133,8 @@ USD_TO_GHS = 11.65
 
 FREE_MAX_DEVICES = 1
 PREMIUM_MAX_DEVICES = 3
+
+# Free trial length (exact clock from account creation → then paid only)
+TRIAL_DAYS = 3
+# Max new trial claims per IP per rolling day (device key is the hard limit)
+TRIAL_IP_PER_DAY = 3

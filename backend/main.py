@@ -22,6 +22,7 @@ from routes.servers import router as servers_router
 from routes.premium import router as premium_router
 from routes.paystack import router as paystack_router
 from routes.admin import router as admin_router
+from routes.webhooks import router as webhooks_router
 from limiter import limiter, _rate_limit_exceeded_handler
 
 # Rate limiter — global
@@ -105,6 +106,7 @@ app.include_router(servers_router)
 app.include_router(premium_router)
 app.include_router(paystack_router)
 app.include_router(admin_router)
+app.include_router(webhooks_router)
 
 
 @app.get("/")
@@ -210,7 +212,7 @@ def seed_from_snapshot():
 # ── Seed servers on first run ────────────────────────────
 SEED_SERVERS = [
     {"id": "us-east", "name": "US East", "country": "United States", "country_code": "US", "city": "New York",
-     "ip_address": "162.159.192.1", "latitude": 40.7128, "longitude": -74.0060, "tier": "free", "speed_mbps": 150, "ping_ms": 15},
+     "ip_address": "162.159.192.1", "latitude": 40.7128, "longitude": -74.0060, "tier": "premium", "speed_mbps": 150, "ping_ms": 15},
     {"id": "us-west", "name": "US West", "country": "United States", "country_code": "US", "city": "San Francisco",
      "ip_address": "162.159.193.1", "latitude": 37.7749, "longitude": -122.4194, "tier": "premium", "speed_mbps": 180, "ping_ms": 25},
     {"id": "uk-london", "name": "UK London", "country": "United Kingdom", "country_code": "GB", "city": "London",
@@ -218,7 +220,7 @@ SEED_SERVERS = [
     {"id": "de-frankfurt", "name": "Germany Frankfurt", "country": "Germany", "country_code": "DE", "city": "Frankfurt",
      "ip_address": "162.159.195.1", "latitude": 50.1109, "longitude": 8.6821, "tier": "premium", "speed_mbps": 160, "ping_ms": 20},
     {"id": "jp-tokyo", "name": "Japan Tokyo", "country": "Japan", "country_code": "JP", "city": "Tokyo",
-     "ip_address": "162.159.196.1", "latitude": 35.6762, "longitude": 139.6503, "tier": "free", "speed_mbps": 170, "ping_ms": 35},
+     "ip_address": "162.159.196.1", "latitude": 35.6762, "longitude": 139.6503, "tier": "premium", "speed_mbps": 170, "ping_ms": 35},
     {"id": "sg-singapore", "name": "Singapore", "country": "Singapore", "country_code": "SG", "city": "Singapore",
      "ip_address": "162.159.197.1", "latitude": 1.3521, "longitude": 103.8198, "tier": "premium", "speed_mbps": 190, "ping_ms": 10},
     {"id": "au-sydney", "name": "Australia Sydney", "country": "Australia", "country_code": "AU", "city": "Sydney",
@@ -227,6 +229,14 @@ SEED_SERVERS = [
      "ip_address": "162.159.199.1", "latitude": -23.5505, "longitude": -46.6333, "tier": "premium", "speed_mbps": 110, "ping_ms": 50},
     {"id": "in-mumbai", "name": "India Mumbai", "country": "India", "country_code": "IN", "city": "Mumbai",
      "ip_address": "162.159.200.1", "latitude": 19.0760, "longitude": 72.8777, "tier": "premium", "speed_mbps": 120, "ping_ms": 45},
+    {"id": "ca-toronto", "name": "Canada Toronto", "country": "Canada", "country_code": "CA", "city": "Toronto",
+     "ip_address": "162.159.201.1", "latitude": 43.6532, "longitude": -79.3832, "tier": "premium", "speed_mbps": 140, "ping_ms": 30},
+    {"id": "nl-amsterdam", "name": "Netherlands Amsterdam", "country": "Netherlands", "country_code": "NL", "city": "Amsterdam",
+     "ip_address": "162.159.202.1", "latitude": 52.3676, "longitude": 4.9041, "tier": "premium", "speed_mbps": 150, "ping_ms": 25},
+    {"id": "kr-seoul", "name": "South Korea Seoul", "country": "South Korea", "country_code": "KR", "city": "Seoul",
+     "ip_address": "162.159.203.1", "latitude": 37.5665, "longitude": 126.9780, "tier": "premium", "speed_mbps": 160, "ping_ms": 30},
+    {"id": "fr-paris", "name": "France Paris", "country": "France", "country_code": "FR", "city": "Paris",
+     "ip_address": "162.159.204.1", "latitude": 48.8566, "longitude": 2.3522, "tier": "premium", "speed_mbps": 150, "ping_ms": 25},
 ]
 
 
@@ -239,6 +249,20 @@ def seed_servers():
                 db.add(Server(**s))
             db.commit()
             print(f"Seeded {len(SEED_SERVERS)} servers")
+        # Product rule: no free tier — force every active server to premium
+        free = db.query(Server).filter(Server.tier != "premium").all()
+        if free:
+            for s in free:
+                s.tier = "premium"
+            db.commit()
+            print(f"Upgraded {len(free)} servers to premium (no free tier)")
+        # Ensure the full 13-location catalog exists
+        existing = {s.id for s in db.query(Server).all()}
+        for s in SEED_SERVERS:
+            if s["id"] not in existing:
+                db.add(Server(**s))
+                print(f"Added missing server {s['id']}")
+        db.commit()
     finally:
         db.close()
 
@@ -248,6 +272,25 @@ def startup():
     init_db()
     seed_from_snapshot()
     seed_servers()
+    # Periodic exact-clock trial expiry (no charging)
+    def _trial_sweep_loop():
+        import time
+        while True:
+            try:
+                time.sleep(60)
+                from billing import sweep_due_accounts
+                db = SessionLocal()
+                try:
+                    n = sweep_due_accounts(db)
+                    if n:
+                        print(f"trial sweep: expired {n}")
+                finally:
+                    db.close()
+            except Exception as e:
+                print(f"trial sweep error: {e}")
+
+    import threading
+    threading.Thread(target=_trial_sweep_loop, daemon=True, name="trial-sweep").start()
     print("SecureVPN API ready")
 
 

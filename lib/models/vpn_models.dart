@@ -175,6 +175,8 @@ class UserAccount {
   final List<String> deviceIds;
   final DateTime createdAt;
   final int deviceCount;
+  final bool isTrial;
+  final DateTime? trialEndsAt;
 
   const UserAccount({
     required this.accountId,
@@ -183,6 +185,8 @@ class UserAccount {
     this.deviceIds = const [],
     required this.createdAt,
     this.deviceCount = 0,
+    this.isTrial = false,
+    this.trialEndsAt,
   });
 
   bool get isPremiumActive {
@@ -191,8 +195,12 @@ class UserAccount {
     return DateTime.now().isBefore(premiumExpiry!);
   }
 
+  /// On the free 3-day trial (premium access, not paid yet).
+  bool get onTrial => isTrial && isPremiumActive;
+
   int get devicesConnected => deviceCount > 0 ? deviceCount : deviceIds.length;
-  bool get canAddDevice => devicesConnected < 2;
+  /// Trial/paid plan allows 3 devices (FREE_MAX is 1 when no plan).
+  bool get canAddDevice => devicesConnected < (isPremiumActive ? 3 : 1);
 
   Map<String, dynamic> toJson() => {
     'accountId': accountId,
@@ -201,6 +209,8 @@ class UserAccount {
     'deviceIds': deviceIds,
     'createdAt': createdAt.toIso8601String(),
     'deviceCount': deviceCount,
+    'isTrial': isTrial,
+    'trialEndsAt': trialEndsAt?.toIso8601String(),
   };
 
   factory UserAccount.fromJson(Map<String, dynamic> json) => UserAccount(
@@ -217,5 +227,9 @@ class UserAccount {
         ? DateTime.parse(json['createdAt'])
         : DateTime.now(),
     deviceCount: json['deviceCount'] ?? 0,
+    isTrial: json['isTrial'] ?? false,
+    trialEndsAt: json['trialEndsAt'] != null
+        ? DateTime.tryParse(json['trialEndsAt'])
+        : null,
   );
 }

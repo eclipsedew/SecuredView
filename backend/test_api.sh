@@ -13,7 +13,7 @@ echo -e "\n=== 2. REGISTER ==="
 REG=$(curl -s -X POST "$BASE/api/accounts/register" \
   -H "Content-Type: application/json" \
   $AUTH_HEADER \
-  -d '{"pin":"1234","device_id":"test-device-001","device_name":"Test Phone","platform":"android"}')
+  -d '{"pin":"1234","device_id":"a1b2c3d4e5f60718","device_name":"Test Phone","platform":"android"}')
 echo "$REG" | python3 -m json.tool
 TOKEN=$(echo "$REG" | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
 AID=$(echo "$REG" | python3 -c "import sys,json; print(json.load(sys.stdin)['account_id'])")
@@ -24,7 +24,7 @@ echo -e "\n=== 3. LOGIN (add linux device) ==="
 curl -s -X POST "$BASE/api/accounts/login" \
   -H "Content-Type: application/json" \
   $AUTH_HEADER \
-  -d "{\"account_id\":\"$AID\",\"pin\":\"1234\",\"device_id\":\"test-device-002\",\"device_name\":\"Desktop\",\"platform\":\"linux\"}" | python3 -m json.tool
+  -d "{\"account_id\":\"$AID\",\"pin\":\"1234\",\"device_id\":\"b1b2c3d4e5f60719\",\"device_name\":\"Desktop\",\"platform\":\"linux\"}" | python3 -m json.tool
 
 echo -e "\n=== 4. GET ME ==="
 curl -s "$BASE/api/accounts/me" -H "Authorization: Bearer $TOKEN" $AUTH_HEADER | python3 -m json.tool
@@ -32,7 +32,7 @@ curl -s "$BASE/api/accounts/me" -H "Authorization: Bearer $TOKEN" $AUTH_HEADER |
 echo -e "\n=== 5. DEVICES ==="
 curl -s "$BASE/api/accounts/me/devices" -H "Authorization: Bearer $TOKEN" $AUTH_HEADER | python3 -m json.tool
 
-echo -e "\n=== 6. SERVERS (free user - should see only free) ==="
+echo -e "\n=== 6. SERVERS (trial user - all locations, all premium) ==="
 curl -s "$BASE/api/servers/" -H "Authorization: Bearer $TOKEN" $AUTH_HEADER | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'{len(d)} servers:'); [print(f'  {s[\"id\"]} ({s[\"tier\"]})') for s in d]"
 
 echo -e "\n=== 7. ALL SERVERS (public) ==="
@@ -44,7 +44,7 @@ curl -s "$BASE/api/premium/plans" $AUTH_HEADER | python3 -m json.tool
 echo -e "\n=== 9. PREMIUM STATUS ==="
 curl -s "$BASE/api/premium/status" -H "Authorization: Bearer $TOKEN" $AUTH_HEADER | python3 -m json.tool
 
-echo -e "\n=== 10. SERVERS (premium user - should see all) ==="
+echo -e "\n=== 10. SERVERS (paid user - same 13 premium locations) ==="
 curl -s "$BASE/api/servers/" -H "Authorization: Bearer $TOKEN" $AUTH_HEADER | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'{len(d)} servers:'); [print(f'  {s[\"id\"]} ({s[\"tier\"]})') for s in d]"
 
 echo -e "\n=== 11. SUBSCRIPTION HISTORY ==="
@@ -54,7 +54,7 @@ echo -e "\n=== 12. ADMIN LOGIN ==="
 ADMIN=$(curl -s -X POST "$BASE/api/admin/login" \
   -H "Content-Type: application/json" \
   $AUTH_HEADER \
-  -d '{"username":"admin","password":"f49b99371e4e18f837839122"}')
+  -d "{\"username\":\"${SECUREVPN_ADMIN_USER:-admin}\",\"password\":\"${SECUREVPN_ADMIN_PASS:?set SECUREVPN_ADMIN_PASS}\"}')
 echo "$ADMIN" | python3 -m json.tool
 AT=$(echo "$ADMIN" | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
 
@@ -68,20 +68,20 @@ echo -e "\n=== 15. WRONG PIN (should fail with generic error) ==="
 curl -s -X POST "$BASE/api/accounts/login" \
   -H "Content-Type: application/json" \
   $AUTH_HEADER \
-  -d "{\"account_id\":\"$AID\",\"pin\":\"9999\",\"device_id\":\"test-device-003\",\"device_name\":\"Hacker\",\"platform\":\"linux\"}" | python3 -m json.tool
+  -d "{\"account_id\":\"$AID\",\"pin\":\"9999\",\"device_id\":\"c1b2c3d4e5f6071a\",\"device_name\":\"Hacker\",\"platform\":\"linux\"}" | python3 -m json.tool
 
 echo -e "\n=== 16. INVALID PIN FORMAT (should fail validation) ==="
 curl -s -X POST "$BASE/api/accounts/register" \
   -H "Content-Type: application/json" \
   $AUTH_HEADER \
-  -d '{"pin":"abcd","device_id":"test","device_name":"Test","platform":"android"}' | python3 -m json.tool
+  -d '{"pin":"abcd","device_id":"d1b2c3d4e5f6071b","device_name":"Test","platform":"android"}' | python3 -m json.tool
 
 echo -e "\n=== 17. RATE LIMIT TEST (register 4 times rapidly) ==="
 for i in 1 2 3 4; do
   curl -s -X POST "$BASE/api/accounts/register" \
     -H "Content-Type: application/json" \
     $AUTH_HEADER \
-    -d "{\"pin\":\"1111\",\"device_id\":\"rate-test-$i\",\"device_name\":\"Rate $i\",\"platform\":\"android\"}" | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'  Attempt {$i}: {d.get(\"account_id\", d.get(\"detail\", \"error\"))}')" 2>/dev/null || echo "  Attempt $i: error"
+    -d "{\"pin\":\"1111\",\"device_id\":\"$(printf '%08x%08x' $i $RANDOM)\",\"device_name\":\"Rate $i\",\"platform\":\"android\"}" | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'  Attempt {$i}: {d.get(\"account_id\", d.get(\"detail\", \"error\"))}')" 2>/dev/null || echo "  Attempt $i: error"
 done
 
 echo -e "\n=== ALL TESTS PASSED ==="

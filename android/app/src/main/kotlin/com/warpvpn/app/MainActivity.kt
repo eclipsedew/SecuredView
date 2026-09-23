@@ -22,6 +22,24 @@ class MainActivity : FlutterActivity() {
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "register" -> handleRegister(call, result)
+                    "getFingerprint" -> {
+                        // Stable hardware id for trial anti-abuse (never sent to 3rd parties)
+                        val androidId = try {
+                            android.provider.Settings.Secure.getString(
+                                contentResolver,
+                                android.provider.Settings.Secure.ANDROID_ID
+                            ) ?: ""
+                        } catch (_: Exception) {
+                            ""
+                        }
+                        val parts = listOf(
+                            androidId,
+                            Build.MANUFACTURER ?: "",
+                            Build.MODEL ?: "",
+                            Build.DEVICE ?: "",
+                        ).joinToString("|")
+                        result.success(parts)
+                    }
                     "hasConfig" -> {
                         result.success(WarpVpnService.hasConfig(this))
                     }

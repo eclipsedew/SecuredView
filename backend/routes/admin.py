@@ -152,10 +152,18 @@ def delete_account(
     _=Depends(_require_admin),
     db: Session = Depends(get_db),
 ):
-    """Delete an account and all its data."""
+    """Delete an account and devices — trial_claims rows are kept forever.
+
+    Prevents delete → recreate → fresh 3-day trial on the same device.
+    """
+    from models import TrialClaim
     acc = db.query(Account).filter(Account.id == account_id.upper()).first()
     if not acc:
         raise HTTPException(status_code=404, detail="Account not found")
+    # Orphan trial claims (no FK) so the device cannot claim again
+    db.query(TrialClaim).filter(TrialClaim.account_id == acc.id).update(
+        {TrialClaim.account_id: None}
+    )
     db.delete(acc)
     db.commit()
     return {"message": f"Account {account_id} deleted"}

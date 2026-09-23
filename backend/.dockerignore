@@ -1,0 +1,12 @@
+venv/
+__pycache__/
+*.pyc
+.env
+.app_key
+.jwt_secret
+.admin_creds
+*.db
+*.db-*
+securevpn.db*
+.git
+.github

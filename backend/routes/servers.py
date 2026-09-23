@@ -33,7 +33,7 @@ def list_servers(
     account: Account = Depends(get_current_account),
     db: Session = Depends(get_db),
 ):
-    """List all active servers. Premium filter is client-side."""
+    """List all active servers. Every location requires trial/paid (client enforces)."""
     query = db.query(Server).filter(Server.is_active == True)
     servers = query.order_by(Server.country, Server.name).all()
     return servers
@@ -47,7 +47,12 @@ def list_all_servers_public(db: Session = Depends(get_db)):
 
 
 @router.get("/{server_id}", response_model=ServerInfo)
-def get_server(server_id: str, db: Session = Depends(get_db)):
+def get_server(
+    server_id: str,
+    account: Account = Depends(get_current_account),
+    db: Session = Depends(get_db),
+):
+    # Auth required — ServerInfo includes ip_address (tunnel endpoint).
     server = db.query(Server).filter(Server.id == server_id).first()
     if not server:
         raise HTTPException(status_code=404, detail="Server not found")

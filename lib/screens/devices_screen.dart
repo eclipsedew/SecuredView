@@ -141,6 +141,7 @@ class _DevicesScreenState extends State<DevicesScreen> {
   @override
   Widget build(BuildContext context) {
     final isPremium = _account.isPremiumActive;
+    // Trial / paid plan: 3 devices. No active plan: management only (1).
     final maxDevices = isPremium ? 3 : 1;
     final currentCount = _devices.length;
 
@@ -187,7 +188,7 @@ class _DevicesScreenState extends State<DevicesScreen> {
                                   style: GoogleFonts.archivo(color: AppTheme.ink, fontSize: 15, fontWeight: FontWeight.w600),
                                 ),
                                 Text(
-                                  isPremium ? 'Premium allows up to 3 devices' : 'Upgrade for up to 3 devices',
+                                  isPremium ? 'Plan allows up to 3 devices' : 'Subscribe for up to 3 devices',
                                   style: GoogleFonts.publicSans(color: AppTheme.muted, fontSize: 12),
                                 ),
                               ],
