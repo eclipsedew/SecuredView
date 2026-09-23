@@ -75,6 +75,14 @@ set(INSTALL_BUNDLE_LIB_DIR "${CMAKE_INSTALL_PREFIX}")
 install(TARGETS ${BINARY_NAME} RUNTIME DESTINATION "${CMAKE_INSTALL_PREFIX}"
   COMPONENT Runtime)
 
+# Bundle usque.exe (MASQUE / WARP) next to securedview.exe when present.
+# Built by CI (or copy manually into windows/bundled/usque.exe before build).
+if(EXISTS "${CMAKE_SOURCE_DIR}/bundled/usque.exe")
+  install(FILES "${CMAKE_SOURCE_DIR}/bundled/usque.exe"
+    DESTINATION "${CMAKE_INSTALL_PREFIX}"
+    COMPONENT Runtime)
+endif()
+
 install(FILES "${FLUTTER_ICU_DATA_FILE}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"
   COMPONENT Runtime)
 

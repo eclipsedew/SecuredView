@@ -1,39 +1,38 @@
-# WarpVPN - Free Cross-Platform VPN
+# WarpVPN / SecuredView VPN
 
-A free, beautiful VPN app powered by Cloudflare WARP. No subscription needed.
+Premium cross-platform VPN built on Cloudflare WARP **MASQUE** (Connect-IP). Same tunnel tech on Android and Windows — survives WireGuard/UDP DPI blocks (GFW).
 
 ## Features
 
-- Free & unlimited VPN
-- AES-256 encryption
-- No logs policy
-- Cross-platform (Android, Linux, Windows)
-- Beautiful modern UI with animations
-- Custom server support
-- Kill switch & auto-connect
-- Connection statistics
+- Cloudflare WARP MASQUE (QUIC/HTTP3) — not plain WireGuard UDP
+- Kill switch & auto-reconnect
+- Connection statistics, modern dark UI
+- Premium subscriptions (Paystack) + free trial tiers
+- Cross-platform: Android, Windows, Linux
 
 ## Platforms
 
-| Platform | Status |
-|----------|--------|
-| Android  | Full VPN service with kill switch |
-| Linux    | Uses `warp-cli` (install Cloudflare WARP) |
-| Windows  | Uses `warp-cli` (install Cloudflare WARP) |
+| Platform | Tunnel | Notes |
+|----------|--------|--------|
+| Android  | MASQUE via `usque.aar` in `VpnService` | Works behind GFW |
+| Windows  | MASQUE via bundled `usque.exe` (TUN) | **Run as Administrator** (Wintun + routes); UAC manifest |
+| Linux    | usque if bundled, else `warp-cli` | Prefer usque MASQUE |
+
+### API base URL
+All native platforms call the public Cloudflare quick-tunnel (`ApiService.publicTunnelUrl`) → local backend `:8080`. Web builds use `http://localhost:8080`.
 
 ## Prerequisites
 
 ### Android
-- Android Studio
-- Flutter SDK
-- Android SDK 24+
+- Android Studio, Flutter SDK, Android SDK 26+
 
-### Linux
+### Windows
+1. No Cloudflare WARP client install required — `usque.exe` is bundled
+2. App requests administrator (MASQUE TUN)
+3. VC++ redistributable (`vc_redist.x64.exe` in the release zip)
+
+### Linux (warp-cli fallback)
 ```bash
-# Install Flutter
-sudo snap install flutter --classic
-
-# Install Cloudflare WARP
 curl -fsSL https://pkg.cloudflareclient.com/cloudflare-warp-ascii.repo | sudo tee /etc/apt/sources.list.d/cloudflare-client.list
 curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | sudo gpg --dearmor -o /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
 echo 'deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg arch=amd64] https://pkg.cloudflareclient.com/ bookworm main' | sudo tee /etc/apt/sources.list.d/cloudflare-client.list
@@ -42,58 +41,51 @@ sudo systemctl enable --now warp-svc
 sudo warp-cli registration new
 ```
 
-### Windows
-1. Download Cloudflare WARP from https://1.1.1.1
-2. Install and register
+To build usque for Linux instead:
+```bash
+git clone https://github.com/justinwoo280/usque.git
+git -C usque checkout db42acb8ee902daba516e765321aa279a57fc2db
+cd usque && CGO_ENABLED=0 go build -o securedview/linux/bundled/usque .
+```
 
 ## Build Instructions
 
 ```bash
-# Clone / navigate to project
 cd WarpVPN
-
-# Get dependencies
 flutter pub get
 
-# Run on connected device
-flutter run -d <device_id>
-
-# Build Android APK
+# Android
 flutter build apk --release
 
-# Build Linux
-flutter build linux --release
-
-# Build Windows
+# Windows (CI builds usque.exe into windows/bundled/ then CMake installs it)
 flutter build windows --release
+
+# Linux
+flutter build linux --release
 ```
+
+CI (`.github/workflows/build.yml`) builds `usque.exe` from the pinned ref (`windows/bundled/usque.ref` / commit `db42acb…`), copies it into the Release folder, and packages `SecuredView-Windows.zip`.
 
 ## Architecture
 
 ```
 lib/
-├── main.dart                    # App entry point
-├── theme/
-│   └── app_theme.dart           # Dark theme with gradients
-├── models/
-│   └── vpn_models.dart          # Server, stats, state models
+├── main.dart
 ├── services/
-│   └── vpn_service.dart         # VPN connection logic
-├── screens/
-│   ├── home_screen.dart         # Main connect screen
-│   ├── servers_screen.dart      # Server list & management
-│   └── settings_screen.dart     # App settings
-└── widgets/
-    ├── connection_button.dart   # Animated power button
-    └── stats_card.dart          # Connection statistics
+│   ├── vpn_service.dart      # connect/disconnect + kill switch
+│   ├── usque_service.dart    # desktop MASQUE (usque CLI)
+│   ├── warp_service.dart     # Android MASQUE (MethodChannel)
+│   └── api_service.dart      # public tunnel base URL
+└── screens/ …
 ```
 
 ## How It Works
 
-1. **Android**: Uses Android's `VpnService` API to create a local VPN tunnel
-2. **Linux/Windows**: Wraps `warp-cli` to manage Cloudflare WARP connection
-3. All traffic is encrypted with AES-256 through Cloudflare's global network
+1. **Android / Windows**: usque registers a free WARP account once, then `usque run` opens a MASQUE TUN with auto-route
+2. **Linux**: same usque path when the binary is present; otherwise `warp-cli`
+3. Traffic rides Cloudflare’s Connect-IP (QUIC), which the GFW does not fingerprint like WireGuard UDP
 
 ## Disclaimer
 
-This app uses Cloudflare WARP, a free encrypted DNS and traffic routing service. It does not guarantee bypassing all network restrictions. Use responsibly.
+Uses Cloudflare WARP. Not a guarantee of bypassing all restrictions. Use responsibly.
+

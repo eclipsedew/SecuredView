@@ -4,11 +4,15 @@ import 'package:flutter/foundation.dart';
 import '../models/vpn_models.dart';
 import 'account_service.dart';
 import 'api_service.dart';
+import 'usque_service.dart';
 import 'warp_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class VPNService extends ChangeNotifier {
   final WarpService _warp = WarpService();
+  final UsqueService _usque = UsqueService();
+  /// True when the active desktop tunnel is usque MASQUE (vs warp-cli).
+  bool _usingUsque = false;
   
   VPNState _state = VPNState.disconnected;
 
@@ -376,7 +380,19 @@ class VPNService extends ChangeNotifier {
   }
 
   Future<void> _connectDesktop() async {
+    // Prefer bundled usque (MASQUE / Connect-IP) — works behind GFW like Android.
+    // Falls back to warp-cli only if usque binary is missing (older Linux installs).
+    if (Platform.isWindows || _usque.binaryExists) {
+      await _usque.connect();
+      _usingUsque = true;
+      return;
+    }
+    await _connectWarpCli();
+  }
+
+  Future<void> _connectWarpCli() async {
     try {
+      _usingUsque = false;
       // Register and set mode (idempotent)
       await Process.run('warp-cli', ['--accept-tos', 'registration', 'new']);
       await Future.delayed(const Duration(seconds: 1));
@@ -411,12 +427,30 @@ class VPNService extends ChangeNotifier {
   }
 
   Future<void> _disconnectDesktop() async {
+    if (_usingUsque || _usque.isRunning) {
+      await _usque.disconnect();
+      _usingUsque = false;
+      // Windows ships only usque; Linux may still have warp-cli as a leftover
+      if (Platform.isWindows || !_warpCliPresent()) return;
+    }
     await Process.run('warp-cli', ['--accept-tos', 'disconnect']);
     for (int i = 0; i < 10; i++) {
       await Future.delayed(const Duration(milliseconds: 500));
       final result = await Process.run('warp-cli', ['--accept-tos', 'status']);
       final status = _parseWarpStatus(result.stdout.toString());
       if (status != 'connected' && status != 'connecting') break;
+    }
+  }
+
+  bool _warpCliPresent() {
+    try {
+      final check = Process.runSync(
+        Platform.isWindows ? 'where' : 'which',
+        ['warp-cli'],
+      );
+      return check.exitCode == 0;
+    } catch (_) {
+      return false;
     }
   }
 
@@ -442,16 +476,20 @@ class VPNService extends ChangeNotifier {
   void _startKillSwitchMonitor() {
     _stopKillSwitchMonitor();
 
-    // Verify warp-cli is available first (desktop only)
+    // Verify a desktop tunnel backend is available first
     if (!kIsWeb && (Platform.isLinux || Platform.isWindows || Platform.isMacOS)) {
-      try {
-        final check = Process.runSync('which', ['warp-cli']);
-        if (check.exitCode != 0) {
-          debugPrint('warp-cli not found — kill switch disabled');
+      if (Platform.isWindows) {
+        if (!_usque.binaryExists) {
+          debugPrint('usque.exe not found — kill switch disabled');
           return;
         }
-      } catch (_) {
-        return;
+      } else {
+        final hasUsque = _usque.binaryExists;
+        final hasWarp = _warpCliPresent();
+        if (!hasUsque && !hasWarp) {
+          debugPrint('no desktop tunnel backend — kill switch disabled');
+          return;
+        }
       }
     }
 
@@ -495,35 +533,40 @@ class VPNService extends ChangeNotifier {
           return;
         }
         if (Platform.isLinux || Platform.isWindows || Platform.isMacOS) {
-          final result = await Process.run('warp-cli', ['--accept-tos', 'status']);
-          final status = _parseWarpStatus(result.stdout.toString());
-          // Only trigger on explicit "disconnected" — not "connecting", "checking", etc.
-          if (status == 'disconnected' && !_isConnecting) {
-            // VPN dropped unexpectedly
-            if (_killSwitch) {
-              // Try to reconnect
-              _state = VPNState.connecting;
-              notifyListeners();
-              try {
-                await _connectDesktop();
-                _state = VPNState.connected;
-                _connectedAt = DateTime.now();
-                _stats = const ConnectionStats();
-                notifyListeners();
-              } catch (_) {
-                // Reconnect failed — stay in error state
-                _state = VPNState.disconnected;
-                _error = 'Connection lost. Kill switch active.';
-                _stopTimers();
-                notifyListeners();
-              }
-            } else {
-              _state = VPNState.disconnected;
-              _connectedAt = null;
+          bool tunnelUp;
+          if (_usingUsque) {
+            tunnelUp = _usque.isConnected();
+          } else {
+            if (!_warpCliPresent()) return;
+            final result = await Process.run('warp-cli', ['--accept-tos', 'status']);
+            final status = _parseWarpStatus(result.stdout.toString());
+            // Only treat explicit "disconnected" as down — not connecting/checking
+            tunnelUp = status != 'disconnected';
+          }
+          if (tunnelUp || _isConnecting) return;
+
+          // Tunnel dropped unexpectedly
+          if (_killSwitch) {
+            _state = VPNState.connecting;
+            notifyListeners();
+            try {
+              await _connectDesktop();
+              _state = VPNState.connected;
+              _connectedAt = DateTime.now();
               _stats = const ConnectionStats();
+              notifyListeners();
+            } catch (_) {
+              _state = VPNState.disconnected;
+              _error = 'Connection lost. Kill switch active.';
               _stopTimers();
               notifyListeners();
             }
+          } else {
+            _state = VPNState.disconnected;
+            _connectedAt = null;
+            _stats = const ConnectionStats();
+            _stopTimers();
+            notifyListeners();
           }
         }
       } catch (_) {

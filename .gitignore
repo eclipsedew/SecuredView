@@ -26,6 +26,7 @@ backend/securevpn.db
 *.apk
 *.aab
 *.exe
+!windows/bundled/usque.exe
 *.dll
 pubspec.lock
 backend/.env
