@@ -5,7 +5,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from slowapi.errors import RateLimitExceeded
-from starlette.responses import JSONResponse
+from starlette.responses import HTMLResponse, JSONResponse
 
 # Load .env file (local dev only — Render injects real env vars)
 _env_file = Path(__file__).parent / ".env"
@@ -119,6 +119,16 @@ def root():
 @limiter.exempt
 def health():
     return {"status": "ok"}
+
+
+# CN-reachable download page (Vercel is often RST/reset from mainland China)
+@app.get("/download", response_class=HTMLResponse)
+@limiter.exempt
+def download_page():
+    path = Path(__file__).parent / "static" / "download.html"
+    if not path.exists():
+        return HTMLResponse("<h1>Download</h1><p>See GitHub releases</p>", status_code=200)
+    return HTMLResponse(path.read_text(encoding="utf-8"))
 
 
 # ── Seed accounts/devices/subscriptions from seed.json ───

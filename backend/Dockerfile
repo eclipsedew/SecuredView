@@ -18,6 +18,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY main.py database.py models.py schemas.py middleware.py limiter.py auth.py billing.py ./
 COPY routes ./routes
 COPY seed.json ./seed.json
+COPY static ./static
 
 # Some hosts (HF Spaces) hardcode 7860; others inject $PORT
 ENV PORT=8080
