@@ -6,13 +6,19 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-# Load app key from file (persists across restarts)
+# Prefer env (Render/Vercel); fall back to local .app_key for dev.
+_env_key = (os.getenv("APP_API_KEY") or "").strip()
 _key_file = Path(__file__).parent / ".app_key"
-if _key_file.exists():
+if _env_key:
+    APP_API_KEY = _env_key
+elif _key_file.exists():
     APP_API_KEY = _key_file.read_text().strip()
 else:
     APP_API_KEY = secrets.token_hex(32)
-    _key_file.write_text(APP_API_KEY)
+    try:
+        _key_file.write_text(APP_API_KEY)
+    except OSError:
+        pass
 
 # Paths that don't require API key (public)
 PUBLIC_PATHS = {

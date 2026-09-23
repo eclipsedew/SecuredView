@@ -7,7 +7,7 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from slowapi.errors import RateLimitExceeded
 from starlette.responses import JSONResponse
 
-# Load .env file
+# Load .env file (local dev only — Render injects real env vars)
 _env_file = Path(__file__).parent / ".env"
 if _env_file.exists():
     for line in _env_file.read_text().splitlines():
@@ -119,6 +119,94 @@ def health():
     return {"status": "ok"}
 
 
+# ── Seed accounts/devices/subscriptions from seed.json ───
+# First boot on an empty Render Postgres: import the exported SQLite snapshot.
+import json as _json
+from datetime import datetime as _dt
+from models import Account, Device, Subscription
+from database import SessionLocal as _SeedSession
+
+
+def _parse_dt(value):
+    if value is None or value == "":
+        return None
+    if isinstance(value, _dt):
+        return value
+    try:
+        return _dt.fromisoformat(str(value))
+    except ValueError:
+        return None
+
+
+def seed_from_snapshot():
+    """First boot on empty DB: import accounts snapshot.
+
+    Sources (first match): SEED_DATA env (JSON or base64(JSON), for Render), else seed.json (local).
+    """
+    data = None
+    raw_env = os.getenv("SEED_DATA", "").strip()
+    if raw_env:
+        try:
+            data = _json.loads(raw_env)
+        except ValueError:
+            import base64 as _b64
+            try:
+                data = _json.loads(_b64.b64decode(raw_env).decode("utf-8"))
+            except Exception as e:
+                print(f"SEED_DATA invalid (need JSON or base64 JSON): {e}")
+                return
+    else:
+        seed_path = Path(__file__).parent / "seed.json"
+        if not seed_path.exists():
+            return
+        data = _json.loads(seed_path.read_text())
+    db = _SeedSession()
+    try:
+        if db.query(Account).count() > 0:
+            return
+        for a in data.get("accounts", []):
+            db.add(Account(
+                id=a["id"],
+                pin_hash=a["pin_hash"],
+                display_name=a.get("display_name") or "User",
+                created_at=_parse_dt(a.get("created_at")),
+                is_premium=bool(a.get("is_premium")),
+                premium_expires_at=_parse_dt(a.get("premium_expires_at")),
+            ))
+        db.flush()
+        for d in data.get("devices", []):
+            db.add(Device(
+                account_id=d["account_id"],
+                device_id=d["device_id"],
+                device_name=d.get("device_name") or "Unknown Device",
+                platform=d.get("platform") or "android",
+                registered_at=_parse_dt(d.get("registered_at")),
+                last_seen=_parse_dt(d.get("last_seen")),
+                is_active=bool(d.get("is_active", True)),
+            ))
+        for s in data.get("subscriptions", []):
+            db.add(Subscription(
+                account_id=s["account_id"],
+                plan=s["plan"],
+                days=int(s["days"]),
+                amount_usd=float(s["amount_usd"]),
+                status=s.get("status") or "active",
+                purchased_at=_parse_dt(s.get("purchased_at")),
+                expires_at=_parse_dt(s.get("expires_at")),
+                payment_ref=s.get("payment_ref"),
+            ))
+        # servers are seeded by seed_servers() if missing; skip snapshot copy
+        db.commit()
+        print(f"Seeded snapshot: {len(data.get('accounts', []))} accounts, "
+              f"{len(data.get('devices', []))} devices, "
+              f"{len(data.get('subscriptions', []))} subscriptions")
+    except Exception as e:
+        db.rollback()
+        print(f"seed_from_snapshot skipped: {e}")
+    finally:
+        db.close()
+
+
 # ── Seed servers on first run ────────────────────────────
 SEED_SERVERS = [
     {"id": "us-east", "name": "US East", "country": "United States", "country_code": "US", "city": "New York",
@@ -158,6 +246,7 @@ def seed_servers():
 @app.on_event("startup")
 def startup():
     init_db()
+    seed_from_snapshot()
     seed_servers()
     print("SecureVPN API ready")
 

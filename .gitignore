@@ -41,3 +41,6 @@ android/app/libs/usque-sources.jar
 # local DB backups
 backend/*.db.bak*
 backend/*.db-journal
+
+# account snapshots (contain PIN hashes) — inject as SEED_DATA on Render, never commit
+backend/seed.json

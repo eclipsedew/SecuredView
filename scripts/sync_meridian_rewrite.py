@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
-"""Point meridianglobal.site API rewrites at the current quick-tunnel URL.
+"""Point meridianglobal.site API rewrites at a backend origin.
 
+Default origin: current Cloudflare quick-tunnel URL.
+Override with --origin https://xxx.onrender.com (Render) or ORIGIN env.
 Run after cloudflared restarts (tunnel hostname changes every time).
 """
 from __future__ import annotations
@@ -19,7 +21,16 @@ TUN_OUT = Path(os.environ.get("TUN_OUT", "/tmp/cloudflared.out"))
 API_PATHS = ("/api/", "/health", "/docs", "/openapi.json")
 
 
-def current_tunnel() -> str:
+def origin_from_args() -> str:
+    # --origin URL or ORIGIN env
+    args = sys.argv[1:]
+    if "--origin" in args:
+        i = args.index("--origin")
+        if i + 1 >= len(args):
+            sys.exit("--origin requires a value")
+        return args[i + 1].rstrip("/")
+    if os.environ.get("ORIGIN"):
+        return os.environ["ORIGIN"].rstrip("/")
     for candidate in (URL_FILE, TUN_OUT):
         if not candidate.exists():
             continue
@@ -27,11 +38,11 @@ def current_tunnel() -> str:
         m = re.search(r"https://[a-z0-9-]+\.trycloudflare\.com", text)
         if m:
             return m.group(0).rstrip()
-    sys.exit("no trycloudflare URL found")
+    sys.exit("no origin: pass --origin https://....onrender.com or start tunnel")
 
 
 def main() -> None:
-    origin = current_tunnel().rstrip("/")
+    origin = origin_from_args()
     data = json.loads(VERCEL_JSON.read_text())
     rewrites = []
     # /api/:path* needs the wildcard path segment

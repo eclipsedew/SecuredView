@@ -1,0 +1,44 @@
+# Render Blueprint — SecuredView backend (FastAPI)
+# Deploy: Render Dashboard → New → Blueprint → connect eclipsedew/SecuredView
+docs: https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: securedview-api
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.8"
+      - key: ENVIRONMENT
+        value: production
+      # Must match lib/services/api_service.dart appApiKey
+      - key: APP_API_KEY
+        value: df6b1d450fbfd724e2d099c9e0949da65cf8f43ba607c87ffe646e7465f34eb5
+      - key: SECUREVPN_JWT_SECRET
+        generateValue: true
+      - key: SECUREVPN_ADMIN_USER
+        value: admin
+      - key: SECUREVPN_ADMIN_PASS
+        generateValue: true
+      - key: PAYSTACK_SECRET_KEY
+        sync: false
+      - key: PAYSTACK_PUBLIC_KEY
+        sync: false
+      - key: ALLOWED_ORIGINS
+        value: >-
+          https://meridianglobal.site,https://www.meridianglobal.site,http://localhost,http://localhost:8080
+      - key: DATABASE_URL
+        fromDatabase:
+          name: securedview-db
+          property: connectionString
+
+databases:
+  - name: securedview-db
+    plan: free
+    databaseName: securedview
+    user: securedview
