@@ -1,6 +1,5 @@
 # Render Blueprint — SecuredView backend (FastAPI)
 # Deploy: Render Dashboard → New → Blueprint → connect eclipsedew/SecuredView
-docs: https://render.com/docs/blueprint-spec
 services:
   - type: web
     name: securedview-api
