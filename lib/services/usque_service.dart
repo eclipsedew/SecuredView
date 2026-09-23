@@ -29,18 +29,36 @@ class UsqueService {
       _binPath = local;
       return _binPath;
     }
-    // Dev / PATH fallback
-    _binPath = binaryName;
-    return _binPath;
+    // Only claim a bare PATH name if it actually resolves.
+    final onPath = _which(binaryName);
+    if (onPath != null) {
+      _binPath = onPath;
+      return _binPath;
+    }
+    return null;
   }
 
-  bool get binaryExists {
-    final bin = findBinary();
-    if (bin == null) return false;
-    if (bin.contains(Platform.pathSeparator)) return File(bin).existsSync();
-    // Bare name — assume PATH
-    return true;
+  /// Resolve a command via where/which; null if missing.
+  static String? _which(String name) {
+    try {
+      final r = Process.runSync(
+        Platform.isWindows ? 'where' : 'which',
+        [name],
+        stdoutEncoding: utf8,
+        stderrEncoding: utf8,
+      );
+      if (r.exitCode != 0) return null;
+      final line = (r.stdout as String)
+          .split('\n')
+          .map((l) => l.trim())
+          .firstWhere((l) => l.isNotEmpty, orElse: () => '');
+      return line.isEmpty ? null : line;
+    } catch (_) {
+      return null;
+    }
   }
+
+  bool get binaryExists => findBinary() != null;
 
   String get configPath {
     if (_configPath != null) return _configPath!;
@@ -76,7 +94,13 @@ class UsqueService {
     _registering = true;
     try {
       final bin = findBinary();
-      if (bin == null) throw Exception('usque binary not found');
+      if (bin == null) {
+        throw Exception(
+          Platform.isWindows
+              ? 'usque.exe not found next to securedview.exe'
+              : 'usque not found (install usque or bundle it)',
+        );
+      }
       final result = await Process.run(
         bin,
         [
@@ -93,7 +117,9 @@ class UsqueService {
         stderrEncoding: utf8,
       );
       if (result.exitCode != 0 || !hasIdentity) {
-        final err = (result.stderr ?? result.stdout ?? '').toString();
+        final err = ((result.stderr ?? '') as String).isEmpty
+            ? (result.stdout ?? '').toString()
+            : (result.stderr ?? '').toString();
         throw Exception('WARP MASQUE registration failed: $err');
       }
     } finally {
@@ -105,12 +131,15 @@ class UsqueService {
   /// is alive for a short warm-up (routes/DNS install).
   Future<void> connect({Duration warmup = const Duration(seconds: 3)}) async {
     if (_process != null) return;
-    await ensureRegistered();
     final bin = findBinary();
-    if (bin == null) throw Exception('usque binary not found');
-    if (!File(bin).existsSync() && bin.contains(Platform.pathSeparator)) {
-      throw Exception('usque not bundled at $bin');
+    if (bin == null) {
+      throw Exception(
+        Platform.isWindows
+            ? 'usque.exe not found next to securedview.exe'
+            : 'usque not found (install usque or bundle it)',
+      );
     }
+    await ensureRegistered();
 
     final process = await Process.start(
       bin,

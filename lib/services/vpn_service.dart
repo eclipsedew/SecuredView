@@ -380,9 +380,19 @@ class VPNService extends ChangeNotifier {
   }
 
   Future<void> _connectDesktop() async {
-    // Prefer bundled usque (MASQUE / Connect-IP) — works behind GFW like Android.
-    // Falls back to warp-cli only if usque binary is missing (older Linux installs).
-    if (Platform.isWindows || _usque.binaryExists) {
+    // Windows: MASQUE only (bundled usque.exe) — never fall back to warp-cli.
+    // Linux/macOS: usque if actually resolvable, else warp-cli.
+    if (Platform.isWindows) {
+      if (!_usque.binaryExists) {
+        throw Exception(
+          'usque.exe not found next to securedview.exe — reinstall from the release zip',
+        );
+      }
+      await _usque.connect();
+      _usingUsque = true;
+      return;
+    }
+    if (_usque.binaryExists) {
       await _usque.connect();
       _usingUsque = true;
       return;
