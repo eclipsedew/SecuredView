@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
@@ -7,15 +8,16 @@ import 'package:http/io_client.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
-  /// Stable public API host — always this domain (never a tunnel URL).
-  /// Vercel rewrites `/api/*` and `/health` → Render `securedview-api.onrender.com`
-  /// (laptop can be off; backend runs on Render).
+  /// Primary public host (Vercel rewrite → Render). Often RST/reset in CN.
   static const publicTunnelUrl = 'https://meridianglobal.site';
 
-  static String get _defaultBaseUrl {
-    // All platforms (web + native) use the stable domain.
-    return publicTunnelUrl;
-  }
+  /// Direct Render origin — works when Vercel is reset (mainland CN).
+  static const renderOriginUrl = 'https://securedview-api.onrender.com';
+
+  /// Ordered fallbacks. First success is sticky via SharedPreferences.
+  static const List<String> apiBases = [publicTunnelUrl, renderOriginUrl];
+
+  static const String _basePrefKey = 'api_base_preferred';
 
   // Embedded API key — matches backend .app_key
   static const String appApiKey = 'df6b1d450fbfd724e2d099c9e0949da65cf8f43ba607c87ffe646e7465f34eb5';
@@ -36,7 +38,9 @@ class ApiService {
   late http.Client _httpClient;
   http.Client get httpClient => _httpClient;
 
-  String get baseUrl => _defaultBaseUrl;
+  String _preferredBase = publicTunnelUrl;
+
+  String get baseUrl => _preferredBase;
   String? get token => _token;
   String? get accountId => _accountId;
   String? get deviceId => _deviceId;
@@ -47,12 +51,92 @@ class ApiService {
     _token = _prefs!.getString(_tokenKey);
     _accountId = _prefs!.getString(_accountIdKey)?.toUpperCase();
     _deviceId = _prefs!.getString(_deviceIdKey);
+    final savedBase = _prefs!.getString(_basePrefKey);
+    if (savedBase != null && apiBases.contains(savedBase)) {
+      _preferredBase = savedBase;
+    }
     if (_deviceId == null) {
       _deviceId = _generateDeviceId();
       await _prefs!.setString(_deviceIdKey, _deviceId!);
     }
     _httpClient = _createSecureClient();
   }
+
+  /// Bases to try: sticky preferred first, then the other endpoint(s).
+  List<String> _orderedBases() {
+    final rest = apiBases.where((b) => b != _preferredBase).toList();
+    return [_preferredBase, ...rest];
+  }
+
+  Future<void> _stickTo(String base) async {
+    if (_preferredBase == base) return;
+    _preferredBase = base;
+    await _prefs?.setString(_basePrefKey, base);
+  }
+
+  /// Single choke point: multi-host failover + short per-try timeout.
+  /// Any HTTP status from the server counts as success (endpoint reachable);
+  /// only transport errors (RST, DNS, timeout) fall through to the next host.
+  Future<http.Response> send(
+    String method,
+    String path, {
+    Map<String, String>? headers,
+    Object? body,
+    Duration timeout = const Duration(seconds: 8),
+    int rounds = 2,
+  }) async {
+    Object? lastError;
+    for (var round = 0; round < rounds; round++) {
+      for (final base in _orderedBases()) {
+        try {
+          final uri = Uri.parse('$base$path');
+          final req = http.Request(method, uri);
+          req.headers.addAll(headers ?? _headers);
+          if (body != null) {
+            req.body = body is String ? body : jsonEncode(body);
+          }
+          final streamed = await _httpClient.send(req).timeout(timeout);
+          final resp = await http.Response.fromStream(streamed)
+              .timeout(const Duration(seconds: 8));
+          await _stickTo(base);
+          return resp;
+        } catch (e) {
+          lastError = e;
+          // next host immediately (RST is usually <1s)
+        }
+      }
+      if (round == 0) {
+        await Future<void>.delayed(const Duration(milliseconds: 400));
+      }
+    }
+    if (lastError is TimeoutException) {
+      throw ApiException('Network timeout. Check your connection and retry.',
+          statusCode: null);
+    }
+    throw ApiException(
+      'Cannot reach SecuredView servers. The network may be blocking this route — retry in a moment.',
+      statusCode: null,
+    );
+  }
+
+  Future<http.Response> get(String path,
+          {Map<String, String>? headers, Duration? timeout}) =>
+      send('GET', path,
+          headers: headers ?? _headers,
+          timeout: timeout ?? const Duration(seconds: 8));
+
+  Future<http.Response> post(String path,
+          {Map<String, String>? headers, Object? body, Duration? timeout}) =>
+      send('POST', path,
+          headers: headers ?? _headers,
+          body: body,
+          timeout: timeout ?? const Duration(seconds: 8));
+
+  Future<http.Response> delete(String path,
+          {Map<String, String>? headers, Duration? timeout}) =>
+      send('DELETE', path,
+          headers: headers ?? _headers,
+          timeout: timeout ?? const Duration(seconds: 8));
 
   /// Create an HTTP client with certificate pinning
   http.Client _createSecureClient() {
@@ -123,8 +207,6 @@ class ApiService {
         'X-Api-Key': appApiKey,
       };
 
-  Uri _uri(String path) => Uri.parse('$baseUrl$path');
-
   Future<Map<String, dynamic>> _handleResponse(http.Response resp) async {
     if (resp.statusCode >= 200 && resp.statusCode < 300) {
       if (resp.body.isEmpty) return {};
@@ -160,17 +242,18 @@ class ApiService {
     required String platform,
     String? fingerprint,
   }) async {
-    final resp = await _httpClient.post(
-      _uri('/api/accounts/register'),
+    final resp = await send(
+      'POST',
+      '/api/accounts/register',
       headers: _publicHeaders,
-      body: jsonEncode({
+      body: {
         'pin': pin,
         'device_id': _deviceId,
         'device_name': deviceName,
         'platform': platform,
         if (fingerprint != null && fingerprint.isNotEmpty)
           'fingerprint': fingerprint,
-      }),
+      },
     );
     final data = await _handleResponse(resp);
     await _saveAuth(data['access_token'], data['account_id']);
@@ -191,10 +274,11 @@ class ApiService {
     required String platform,
     String? fingerprint,
   }) async {
-    final resp = await _httpClient.post(
-      _uri('/api/accounts/login'),
+    final resp = await send(
+      'POST',
+      '/api/accounts/login',
       headers: _publicHeaders,
-      body: jsonEncode({
+      body: {
         'account_id': accountId.trim().toUpperCase(),
         'pin': pin,
         'device_id': _deviceId,
@@ -202,7 +286,7 @@ class ApiService {
         'platform': platform,
         if (fingerprint != null && fingerprint.isNotEmpty)
           'fingerprint': fingerprint,
-      }),
+      },
     );
     final data = await _handleResponse(resp);
     await _saveAuth(data['access_token'], data['account_id']);
@@ -213,44 +297,44 @@ class ApiService {
   }
 
   Future<AccountInfo> getAccountInfo() async {
-    final resp = await _httpClient.get(_uri('/api/accounts/me'), headers: _headers);
+    final resp = await get('/api/accounts/me');
     final data = await _handleResponse(resp);
     return AccountInfo.fromJson(data);
   }
 
   // Servers
   Future<List<ServerData>> getAvailableServers() async {
-    final resp = await _httpClient.get(_uri('/api/servers/'), headers: _headers);
+    final resp = await get('/api/servers/');
     final list = await _handleListResponse(resp);
     return list.map((s) => ServerData.fromJson(s)).toList();
   }
 
   Future<List<ServerData>> getAllServersPublic() async {
-    final resp = await _httpClient.get(_uri('/api/servers/all'), headers: _publicHeaders);
+    final resp = await get('/api/servers/all', headers: _publicHeaders);
     final list = await _handleListResponse(resp);
     return list.map((s) => ServerData.fromJson(s)).toList();
   }
 
   // Devices
   Future<List<DeviceInfoData>> getDevices() async {
-    final resp = await _httpClient.get(_uri('/api/accounts/me/devices'), headers: _headers);
+    final resp = await get('/api/accounts/me/devices');
     final list = await _handleListResponse(resp);
     return list.map((d) => DeviceInfoData.fromJson(d)).toList();
   }
 
   Future<void> removeDevice(String deviceId) async {
-    await _httpClient.delete(_uri('/api/accounts/me/devices/$deviceId'), headers: _headers);
+    await delete('/api/accounts/me/devices/$deviceId');
   }
 
   // Premium
   Future<List<PlanData>> getPlans() async {
-    final resp = await _httpClient.get(_uri('/api/premium/plans'), headers: _publicHeaders);
+    final resp = await get('/api/premium/plans', headers: _publicHeaders);
     final list = await _handleListResponse(resp);
     return list.map((p) => PlanData.fromJson(p)).toList();
   }
 
   Future<PremiumStatus> getPremiumStatus() async {
-    final resp = await _httpClient.get(_uri('/api/premium/status'), headers: _headers);
+    final resp = await get('/api/premium/status');
     final data = await _handleResponse(resp);
     return PremiumStatus.fromJson(data);
   }
@@ -274,8 +358,8 @@ class ApiService {
 
   Future<bool> checkHealth() async {
     try {
-      final resp = await _httpClient.get(_uri('/health'), headers: _publicHeaders)
-          .timeout(const Duration(seconds: 5));
+      final resp = await get('/health',
+          headers: _publicHeaders, timeout: const Duration(seconds: 5));
       return resp.statusCode == 200;
     } catch (_) {
       return false;

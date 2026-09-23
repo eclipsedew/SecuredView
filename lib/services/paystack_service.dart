@@ -16,10 +16,10 @@ class PaystackService {
     required String planId,
     required String email,
   }) async {
-    final resp = await _api.httpClient.post(
-      Uri.parse('${_api.baseUrl}/api/paystack/initialize'),
+    final resp = await _api.post(
+      '/api/paystack/initialize',
       headers: _headers,
-      body: jsonEncode({'plan_id': planId, 'email': email}),
+      body: {'plan_id': planId, 'email': email},
     );
 
     if (resp.statusCode >= 200 && resp.statusCode < 300) {
@@ -39,10 +39,10 @@ class PaystackService {
     required String reference,
     required String planId,
   }) async {
-    final resp = await _api.httpClient.post(
-      Uri.parse('${_api.baseUrl}/api/paystack/verify'),
+    final resp = await _api.post(
+      '/api/paystack/verify',
       headers: _headers,
-      body: jsonEncode({'reference': reference, 'plan_id': planId}),
+      body: {'reference': reference, 'plan_id': planId},
     );
 
     if (resp.statusCode >= 200 && resp.statusCode < 300) {
