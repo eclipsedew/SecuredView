@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -23,16 +24,66 @@ class PaystackPaymentScreen extends StatefulWidget {
   State<PaystackPaymentScreen> createState() => _PaystackPaymentScreenState();
 }
 
-class _PaystackPaymentScreenState extends State<PaystackPaymentScreen> {
+class _PaystackPaymentScreenState extends State<PaystackPaymentScreen>
+    with WidgetsBindingObserver {
   bool _loading = true;
   String? _error;
   String? _authorizationUrl;
   String? _reference;
+  bool _sheetOpen = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _initPayment();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// When the user comes back from the browser, auto-run verification
+  /// (app-side "redirect" until a Paystack callback_url is configured).
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) return;
+    if (_reference == null || _loading || _error != null) return;
+    if (_sheetOpen) return;
+    _showVerificationSheet();
+  }
+
+  /// Open Paystack checkout in a **new browser tab** (not the current tab).
+  Future<bool> _openCheckoutInNewTab(Uri uri) async {
+    // Web: always target a new tab.
+    if (kIsWeb) {
+      return launchUrl(
+        uri,
+        mode: LaunchMode.platformDefault,
+        webOnlyWindowName: '_blank',
+      );
+    }
+
+    // Android/iOS: Chrome Custom Tab (browser UI as its own tab session).
+    // Closing it returns focus to the app.
+    try {
+      if (await supportsLaunchMode(LaunchMode.inAppBrowserView)) {
+        final ok = await launchUrl(uri, mode: LaunchMode.inAppBrowserView);
+        if (ok) return true;
+      }
+    } catch (_) {
+      // fall through to external browser
+    }
+
+    // Desktop / fallback: system browser (xdg-open / default handler) —
+    // typically a new tab/window. webOnlyWindowName only affects web builds.
+    return launchUrl(
+      uri,
+      mode: LaunchMode.externalApplication,
+      webOnlyWindowName: '_blank',
+    );
   }
 
   Future<void> _initPayment() async {
@@ -60,29 +111,27 @@ class _PaystackPaymentScreenState extends State<PaystackPaymentScreen> {
         _loading = false;
       });
 
-      // Open Paystack checkout in the system browser (all platforms).
-      // After payment the user returns to the app and taps "I Completed Payment".
-      final opened = await launchUrl(
+      // Open checkout in a new browser tab.
+      final opened = await _openCheckoutInNewTab(
         Uri.parse(result.authorizationUrl),
-        mode: LaunchMode.externalApplication,
       );
       if (!opened && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              'Could not open the browser. Tap below to copy the payment link.',
+            content: const Text(
+              'Could not open the browser. Use the button below for a new tab.',
             ),
             action: SnackBarAction(
-              label: 'Open',
-              onPressed: () => launchUrl(
+              label: 'New Tab',
+              onPressed: () => _openCheckoutInNewTab(
                 Uri.parse(result.authorizationUrl),
-                mode: LaunchMode.externalApplication,
               ),
             ),
           ),
         );
       }
-      if (mounted) _showVerificationSheet();
+      // Stay on the waiting screen; verification starts when the user
+      // returns to the app (or taps "I Completed Payment").
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -153,17 +202,23 @@ class _PaystackPaymentScreenState extends State<PaystackPaymentScreen> {
     );
   }
 
-  void _showVerificationSheet() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => _VerificationSheet(
-        reference: _reference!,
-        planId: widget.planId,
-        planName: widget.planName,
-      ),
-    );
+  Future<void> _showVerificationSheet() async {
+    if (_reference == null || _sheetOpen) return;
+    _sheetOpen = true;
+    try {
+      await showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (ctx) => _VerificationSheet(
+          reference: _reference!,
+          planId: widget.planId,
+          planName: widget.planName,
+        ),
+      );
+    } finally {
+      _sheetOpen = false;
+    }
   }
 
   @override
@@ -240,7 +295,7 @@ class _PaystackPaymentScreenState extends State<PaystackPaymentScreen> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(Icons.open_in_browser_rounded, color: AppTheme.blue, size: 48),
+        Icon(Icons.open_in_new_rounded, color: AppTheme.blue, size: 48),
         const SizedBox(height: 16),
         Text(
           'Complete Payment',
@@ -248,7 +303,9 @@ class _PaystackPaymentScreenState extends State<PaystackPaymentScreen> {
         ),
         const SizedBox(height: 8),
         Text(
-          'The Paystack checkout page has opened in your browser.\nComplete the payment, then tap the button below.',
+          'Paystack checkout opened in a new browser tab.\n'
+          'Finish payment there, then come back to this app —\n'
+          'we verify automatically when you return.',
           style: GoogleFonts.publicSans(color: AppTheme.muted, fontSize: 13),
           textAlign: TextAlign.center,
         ),
@@ -272,14 +329,11 @@ class _PaystackPaymentScreenState extends State<PaystackPaymentScreen> {
         OutlinedButton.icon(
           onPressed: () {
             if (_authorizationUrl != null) {
-              launchUrl(
-                Uri.parse(_authorizationUrl!),
-                mode: LaunchMode.externalApplication,
-              );
+              _openCheckoutInNewTab(Uri.parse(_authorizationUrl!));
             }
           },
-          icon: const Icon(Icons.open_in_browser_rounded, size: 18),
-          label: Text('Open Browser', style: GoogleFonts.publicSans()),
+          icon: const Icon(Icons.open_in_new_rounded, size: 18),
+          label: Text('Open in New Tab', style: GoogleFonts.publicSans()),
           style: OutlinedButton.styleFrom(
             side: const BorderSide(color: AppTheme.line2),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(2)),
@@ -310,7 +364,8 @@ class _VerificationSheet extends StatefulWidget {
   State<_VerificationSheet> createState() => _VerificationSheetState();
 }
 
-class _VerificationSheetState extends State<_VerificationSheet> {
+class _VerificationSheetState extends State<_VerificationSheet>
+    with WidgetsBindingObserver {
   bool _verifying = true;
   bool? _success;
   String? _message;
@@ -318,7 +373,22 @@ class _VerificationSheetState extends State<_VerificationSheet> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _verify();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// Instant re-check when the user switches back from the browser tab.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _verifying) {
+      _verify();
+    }
   }
 
   Future<void> _verify() async {
@@ -326,15 +396,16 @@ class _VerificationSheetState extends State<_VerificationSheet> {
       final account = context.read<AccountService>();
       final paystack = PaystackService(account.api);
 
-      // Poll for verification (user might still be paying)
-      for (int i = 0; i < 30; i++) {
+      // Poll for verification (user might still be paying in the other tab)
+      for (int i = 0; i < 40; i++) {
+        if (!mounted || !_verifying) return;
         final result = await paystack.verifyPayment(
           reference: widget.reference,
           planId: widget.planId,
         );
 
+        if (!mounted) return;
         if (result.success) {
-          if (!mounted) return;
           setState(() {
             _verifying = false;
             _success = true;
@@ -348,7 +419,6 @@ class _VerificationSheetState extends State<_VerificationSheet> {
 
         // If failed (not just "pending"), stop
         if (result.message != 'Payment pending' && result.message.isNotEmpty) {
-          if (!mounted) return;
           setState(() {
             _verifying = false;
             _success = false;
@@ -440,7 +510,11 @@ class _VerificationSheetState extends State<_VerificationSheet> {
                 Expanded(
                   child: OutlinedButton(
                     onPressed: () {
-                      setState(() { _verifying = true; _success = null; });
+                      setState(() {
+                        _verifying = true;
+                        _success = null;
+                        _message = null;
+                      });
                       _verify();
                     },
                     style: OutlinedButton.styleFrom(

@@ -34,6 +34,9 @@ def _ensure_utc(dt):
 class InitializeRequest(BaseModel):
     plan_id: str
     email: str = Field(..., max_length=254)
+    # Optional: deep-link / https URL Paystack redirects to after checkout.
+    # Leave empty until you configure it in the Paystack dashboard or app links.
+    callback_url: Optional[str] = Field(default=None, max_length=512)
 
     @field_validator("email")
     @classmethod
@@ -41,6 +44,18 @@ class InitializeRequest(BaseModel):
         v = v.strip().lower()
         if not re.fullmatch(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}", v):
             raise ValueError("Invalid email format")
+        return v
+
+    @field_validator("callback_url")
+    @classmethod
+    def validate_callback(cls, v):
+        if v is None:
+            return v
+        v = v.strip()
+        if not v:
+            return None
+        if not re.fullmatch(r"https://.+", v):
+            raise ValueError("callback_url must be https://")
         return v
 
 
@@ -90,6 +105,8 @@ def initialize_payment(
                 "amount": amount_pesewas,
                 "reference": reference,
                 "currency": PAYSTACK_CURRENCY,
+                # Post-payment browser redirect (optional; dashboard default applies if omitted)
+                **({"callback_url": req.callback_url} if req.callback_url else {}),
                 "metadata": {
                     "account_id": account.id,
                     "plan_id": req.plan_id,
