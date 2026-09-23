@@ -7,14 +7,12 @@ import 'package:http/io_client.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
-  /// Public Cloudflare quick-tunnel → local backend :8080.
-  /// Same URL for all native platforms (Android + Windows + Linux + macOS).
-  static const publicTunnelUrl = 'https://artists-friends-feelings-rss.trycloudflare.com';
+  /// Stable public API host — meridianglobal.site Vercel rewrites
+  /// `/api/*` (and `/health`) to the active Cloudflare quick tunnel → :8080.
+  static const publicTunnelUrl = 'https://meridianglobal.site';
 
   static String get _defaultBaseUrl {
-    if (kIsWeb) return 'http://localhost:8080';
-    // Desktop must not use localhost — Windows/Linux clients hit the tunnel
-    // like Android does (quick tunnel; changes when cloudflared restarts).
+    // All platforms (web + native) use the stable domain.
     return publicTunnelUrl;
   }
 

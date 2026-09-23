@@ -44,7 +44,11 @@ print(f"API key loaded: {APP_API_KEY[:8]}...")
 
 # 2. CORS: explicit origins, no wildcard + credentials
 ENVIRONMENT = os.getenv("ENVIRONMENT", "production")
-ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost,http://localhost:8080").split(",")
+ALLOWED_ORIGINS = os.getenv(
+    "ALLOWED_ORIGINS",
+    "https://meridianglobal.site,https://www.meridianglobal.site,"
+    "http://localhost,http://localhost:8080",
+).split(",")
 
 if ENVIRONMENT == "development":
     app.add_middleware(

@@ -19,7 +19,9 @@ Premium cross-platform VPN built on Cloudflare WARP **MASQUE** (Connect-IP). Sam
 | Linux    | usque if bundled, else `warp-cli` | Prefer usque MASQUE |
 
 ### API base URL
-All native platforms call the public Cloudflare quick-tunnel (`ApiService.publicTunnelUrl`) → local backend `:8080`. Web builds use `http://localhost:8080`.
+All platforms call **`https://meridianglobal.site`** (`ApiService.publicTunnelUrl`).
+Vercel on that domain rewrites `/api/*` and `/health` → Cloudflare quick tunnel → local backend `:8080`.
+When the tunnel restarts (hostname changes), run `scripts/sync_meridian_rewrite.py --deploy` (or `start.sh`, which does it automatically).
 
 ## Prerequisites
 
