@@ -1,14 +1,14 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
 import '../models/vpn_models.dart';
 import 'account_service.dart';
 import 'api_service.dart';
+import 'warp_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class VPNService extends ChangeNotifier {
-  static const MethodChannel _channel = MethodChannel('com.securevpn/vpn');
+  final WarpService _warp = WarpService();
   
   VPNState _state = VPNState.disconnected;
 
@@ -149,7 +149,7 @@ class VPNService extends ChangeNotifier {
         countryCode: 'US', endpoint: 'engage.cloudflareclient.com', port: 2408,
         publicKey: 'bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=',
         ipAddress: '162.159.192.1/32', dns: '1.1.1.1',
-        isPremium: true, sortOrder: 0,
+        isPremium: false, sortOrder: 0,
         latitude: 40.7128, longitude: -74.0060,
       ),
       const ServerConfig(
@@ -157,7 +157,7 @@ class VPNService extends ChangeNotifier {
         countryCode: 'JP', endpoint: 'engage.cloudflareclient.com', port: 2408,
         publicKey: 'bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=',
         ipAddress: '162.159.196.1/32', dns: '1.1.1.1',
-        isPremium: true, sortOrder: 1,
+        isPremium: false, sortOrder: 1,
         latitude: 35.6762, longitude: 139.6503,
       ),
       const ServerConfig(
@@ -422,14 +422,9 @@ class VPNService extends ChangeNotifier {
 
   Future<void> _connectMobile() async {
     try {
-      final server = _currentServer ?? availableServers.first;
-      await _channel.invokeMethod('connect', {
-        'endpoint': server.endpoint,
-        'port': server.port,
-        'publicKey': server.publicKey,
-        'ipAddress': server.ipAddress,
-        'dns': server.dns ?? '1.1.1.1',
-      });
+      // Register with Cloudflare WARP (cached) and start real WireGuard tunnel
+      await _warp.connect();
+      _lastConnectTime = DateTime.now();
     } catch (e) {
       throw Exception('Mobile connection failed: $e');
     }
@@ -437,7 +432,7 @@ class VPNService extends ChangeNotifier {
 
   Future<void> _disconnectMobile() async {
     try {
-      await _channel.invokeMethod('disconnect');
+      await _warp.disconnect();
     } catch (e) {
       throw Exception('Mobile disconnect failed: $e');
     }
@@ -470,6 +465,35 @@ class VPNService extends ChangeNotifier {
       }
 
       try {
+        if (Platform.isAndroid || Platform.isIOS) {
+          // Check WireGuard tunnel is still up
+          final up = await _warp.isConnected();
+          if (!up && !_isConnecting) {
+            if (_killSwitch) {
+              _state = VPNState.connecting;
+              notifyListeners();
+              try {
+                await _connectMobile();
+                _state = VPNState.connected;
+                _connectedAt = DateTime.now();
+                _stats = const ConnectionStats();
+                notifyListeners();
+              } catch (_) {
+                _state = VPNState.disconnected;
+                _error = 'Connection lost. Kill switch active.';
+                _stopTimers();
+                notifyListeners();
+              }
+            } else {
+              _state = VPNState.disconnected;
+              _connectedAt = null;
+              _stats = const ConnectionStats();
+              _stopTimers();
+              notifyListeners();
+            }
+          }
+          return;
+        }
         if (Platform.isLinux || Platform.isWindows || Platform.isMacOS) {
           final result = await Process.run('warp-cli', ['--accept-tos', 'status']);
           final status = _parseWarpStatus(result.stdout.toString());

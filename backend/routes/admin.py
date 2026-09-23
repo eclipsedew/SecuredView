@@ -129,7 +129,7 @@ def get_account(
     _=Depends(_require_admin),
     db: Session = Depends(get_db),
 ):
-    acc = db.query(Account).filter(Account.id == account_id).first()
+    acc = db.query(Account).filter(Account.id == account_id.upper()).first()
     if not acc:
         raise HTTPException(status_code=404, detail="Account not found")
     device_count = db.query(func.count(Device.id)).filter(
@@ -153,7 +153,7 @@ def delete_account(
     db: Session = Depends(get_db),
 ):
     """Delete an account and all its data."""
-    acc = db.query(Account).filter(Account.id == account_id).first()
+    acc = db.query(Account).filter(Account.id == account_id.upper()).first()
     if not acc:
         raise HTTPException(status_code=404, detail="Account not found")
     db.delete(acc)

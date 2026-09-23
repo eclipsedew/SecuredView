@@ -97,6 +97,16 @@ class AccountService extends ChangeNotifier {
         createdAt: DateTime.now(),
       );
       _error = null;
+    } on ApiException catch (e) {
+      if (e.statusCode == 409) {
+        _error = 'This device already has an account. Please login instead.';
+      } else if (e.statusCode == 429) {
+        _error = 'Too many attempts. Please wait a few minutes and try again.';
+      } else {
+        _error = e.message.isNotEmpty ? e.message : 'Failed to create account.';
+      }
+      notifyListeners();
+      return false;
     } catch (e) {
       _error = 'Failed to create account. Check your connection.';
       notifyListeners();
@@ -116,7 +126,7 @@ class AccountService extends ChangeNotifier {
     final platform = _getPlatformName();
     try {
       final result = await _api.login(
-        accountId: accountId,
+        accountId: accountId.trim().toUpperCase(),
         pin: pin,
         deviceName: platform,
         platform: platform,
@@ -134,8 +144,18 @@ class AccountService extends ChangeNotifier {
       await prefs.setBool(_pinSetupKey, true);
       notifyListeners();
       return true;
+    } on ApiException catch (e) {
+      if (e.statusCode == 429) {
+        _error = 'Too many attempts. Please wait a few minutes and try again.';
+      } else if (e.statusCode == 401) {
+        _error = 'Invalid Account ID or PIN';
+      } else {
+        _error = 'Login failed. Check your connection.';
+      }
+      notifyListeners();
+      return false;
     } catch (e) {
-      _error = 'Invalid credentials';
+      _error = 'Login failed. Check your connection.';
       notifyListeners();
       return false;
     }

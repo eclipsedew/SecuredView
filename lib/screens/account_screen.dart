@@ -130,14 +130,14 @@ class AccountScreen extends StatelessWidget {
               children: [
                 Expanded(
                   child: Text(
-                    acc.accountId,
+                    acc.accountId.toUpperCase(),
                     style: GoogleFonts.jetBrainsMono(fontSize: 14, letterSpacing: 1, fontWeight: FontWeight.w500, color: AppTheme.ink),
                   ),
                 ),
                 IconButton(
                   icon: Icon(Icons.copy_rounded, color: AppTheme.muted, size: 18),
                   onPressed: () {
-                    Clipboard.setData(ClipboardData(text: acc.accountId));
+                    Clipboard.setData(ClipboardData(text: acc.accountId.toUpperCase()));
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(content: Text('Copied')),
                     );

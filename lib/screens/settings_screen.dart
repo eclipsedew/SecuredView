@@ -191,7 +191,7 @@ class SettingsScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 3),
                   Text(
-                    acc.accountId,
+                    acc.accountId.toUpperCase(),
                     style: GoogleFonts.jetBrainsMono(
                       color: AppTheme.muted,
                       fontSize: 11,
@@ -346,7 +346,7 @@ class SettingsScreen extends StatelessWidget {
     await account.createAccount(pin);
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Account created. ID: ${account.account!.accountId}')),
+        SnackBar(content: Text('Account created. ID: ${account.account!.accountId.toUpperCase()}')),
       );
     }
   }

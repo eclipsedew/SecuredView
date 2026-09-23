@@ -10,8 +10,8 @@ from database import Base
 
 
 def gen_account_id():
-    """Generate a 16-char hex account ID."""
-    return secrets.token_hex(8)
+    """Generate a 16-char uppercase hex account ID."""
+    return secrets.token_hex(8).upper()
 
 
 class Account(Base):

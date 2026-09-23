@@ -7,13 +7,13 @@ import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
+import mobile.Mobile
 
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "com.warpvpn/vpn"
     private val VPN_REQUEST_CODE = 1001
 
-    private var vpnMethodCall: MethodCall? = null
-    private var vpnResult: MethodChannel.Result? = null
+    private var pendingConnectResult: MethodChannel.Result? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -21,16 +21,11 @@ class MainActivity : FlutterActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
-                    "connect" -> {
-                        val prepareIntent = VpnService.prepare(this)
-                        if (prepareIntent != null) {
-                            vpnMethodCall = call
-                            vpnResult = result
-                            startActivityForResult(prepareIntent, VPN_REQUEST_CODE)
-                        } else {
-                            startVpnService(call, result)
-                        }
+                    "register" -> handleRegister(call, result)
+                    "hasConfig" -> {
+                        result.success(WarpVpnService.hasConfig(this))
                     }
+                    "connect" -> handleConnect(call, result)
                     "disconnect" -> {
                         val intent = Intent(this, WarpVpnService::class.java).apply {
                             action = WarpVpnService.ACTION_STOP
@@ -43,56 +38,88 @@ class MainActivity : FlutterActivity() {
                         result.success(true)
                     }
                     "getStatus" -> {
-                        result.success(WarpVpnService::class.java.simpleName)
+                        // Prefer live Go engine status; fall back to service state.
+                        val status = try {
+                            Mobile.getStatus()
+                        } catch (_: Exception) {
+                            null
+                        }
+                        if (!status.isNullOrBlank()) {
+                            result.success(status)
+                        } else {
+                            result.success(
+                                """{"state":"${WarpVpnService.currentState()}","bytes_sent":0,"bytes_recv":0,"uptime":""}"""
+                            )
+                        }
                     }
-                    else -> {
-                        result.notImplemented()
-                    }
+                    else -> result.notImplemented()
                 }
             }
     }
 
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == VPN_REQUEST_CODE) {
-            if (resultCode == RESULT_OK) {
-                vpnMethodCall?.let { call ->
-                    vpnResult?.let { result ->
-                        startVpnService(call, result)
+    private fun handleRegister(call: MethodCall, result: MethodChannel.Result) {
+        if (WarpVpnService.hasConfig(this)) {
+            result.success(true)
+            return
+        }
+        val deviceName = call.argument<String>("deviceName") ?: "SecuredView"
+        Thread {
+            try {
+                val config = Mobile.registerAccount("", deviceName)
+                runOnUiThread {
+                    if (config.startsWith("error:")) {
+                        result.error("REGISTER_FAILED", config.removePrefix("error: "), null)
+                    } else {
+                        WarpVpnService.saveConfig(this, config)
+                        result.success(true)
                     }
                 }
-            } else {
-                vpnResult?.error("PERMISSION_DENIED", "VPN permission denied by user", null)
+            } catch (e: Exception) {
+                runOnUiThread {
+                    result.error("REGISTER_FAILED", e.message ?: "registration failed", null)
+                }
             }
-            vpnMethodCall = null
-            vpnResult = null
+        }.start()
+    }
+
+    private fun handleConnect(call: MethodCall, result: MethodChannel.Result) {
+        if (!WarpVpnService.hasConfig(this)) {
+            result.error("NO_CONFIG", "No WARP configuration. Call register first.", null)
+            return
+        }
+        val prepareIntent = VpnService.prepare(this)
+        if (prepareIntent != null) {
+            pendingConnectResult = result
+            startActivityForResult(prepareIntent, VPN_REQUEST_CODE)
+        } else {
+            startVpnService(result)
         }
     }
 
-    @Suppress("UNCHECKED_CAST")
-    private fun startVpnService(call: MethodCall, result: MethodChannel.Result) {
-        val args = call.arguments as? Map<String, Any> ?: emptyMap()
-        val endpoint = args["endpoint"] as? String ?: ""
-        val port = args["port"] as? Int ?: 2408
-        val publicKey = args["publicKey"] as? String ?: ""
-        val ipAddress = args["ipAddress"] as? String ?: "172.19.0.2/32"
-        val dns = args["dns"] as? String ?: "1.1.1.1"
-
+    private fun startVpnService(result: MethodChannel.Result) {
         val intent = Intent(this, WarpVpnService::class.java).apply {
             action = WarpVpnService.ACTION_START
-            putExtra("endpoint", endpoint)
-            putExtra("port", port)
-            putExtra("publicKey", publicKey)
-            putExtra("ipAddress", ipAddress)
-            putExtra("dns", dns)
         }
-
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             startForegroundService(intent)
         } else {
             startService(intent)
         }
-
         result.success(true)
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == VPN_REQUEST_CODE) {
+            val pending = pendingConnectResult
+            pendingConnectResult = null
+            if (resultCode == RESULT_OK) {
+                if (pending != null) {
+                    startVpnService(pending)
+                }
+            } else {
+                pending?.error("PERMISSION_DENIED", "VPN permission denied by user", null)
+            }
+        }
     }
 }

@@ -33,3 +33,10 @@ backend/.app_key
 android/app/release-key.jks
 android/key.properties
 ..bfg-report/
+
+# gomobile sources not needed for build
+android/app/libs/usque-sources.jar
+
+# local DB backups
+backend/*.db.bak*
+backend/*.db-journal

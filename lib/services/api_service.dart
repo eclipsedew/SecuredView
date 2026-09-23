@@ -9,7 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 class ApiService {
   static String get _defaultBaseUrl {
     if (kIsWeb) return 'http://localhost:8080';
-    if (Platform.isAndroid) return 'https://trek-diversity-wholesale-roger.trycloudflare.com';
+    if (Platform.isAndroid) return 'https://artists-friends-feelings-rss.trycloudflare.com';
     return 'http://localhost:8080';
   }
 
@@ -41,7 +41,7 @@ class ApiService {
   Future<void> init() async {
     _prefs = await SharedPreferences.getInstance();
     _token = _prefs!.getString(_tokenKey);
-    _accountId = _prefs!.getString(_accountIdKey);
+    _accountId = _prefs!.getString(_accountIdKey)?.toUpperCase();
     _deviceId = _prefs!.getString(_deviceIdKey);
     if (_deviceId == null) {
       _deviceId = _generateDeviceId();
@@ -74,6 +74,7 @@ class ApiService {
   }
 
   Future<void> _saveAuth(String token, String accountId) async {
+    accountId = accountId.toUpperCase();
     _token = token;
     _accountId = accountId;
     await _prefs!.setString(_tokenKey, token);
@@ -154,7 +155,7 @@ class ApiService {
     final data = await _handleResponse(resp);
     await _saveAuth(data['access_token'], data['account_id']);
     return RegisterResult(
-      accountId: data['account_id'],
+      accountId: data['account_id'].toString().toUpperCase(),
       isPremium: data['is_premium'] ?? false,
     );
   }
@@ -169,7 +170,7 @@ class ApiService {
       _uri('/api/accounts/login'),
       headers: _publicHeaders,
       body: jsonEncode({
-        'account_id': accountId,
+        'account_id': accountId.trim().toUpperCase(),
         'pin': pin,
         'device_id': _deviceId,
         'device_name': deviceName,
@@ -179,7 +180,7 @@ class ApiService {
     final data = await _handleResponse(resp);
     await _saveAuth(data['access_token'], data['account_id']);
     return LoginResult(
-      accountId: data['account_id'],
+      accountId: data['account_id'].toString().toUpperCase(),
       isPremium: data['is_premium'] ?? false,
     );
   }

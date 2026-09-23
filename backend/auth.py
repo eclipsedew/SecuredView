@@ -115,6 +115,9 @@ def decode_token(token: str) -> str:
     account_id: str = payload.get("sub")
     if account_id is None:
         raise HTTPException(status_code=401, detail="Invalid credentials")
+    # Account IDs are stored uppercase; old tokens may still carry lowercase
+    if account_id != "__admin__":
+        account_id = account_id.upper()
     return account_id
 
 

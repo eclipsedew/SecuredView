@@ -717,12 +717,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         final vpnService = context.read<VPNService>();
                         bool success;
                         if (isLogin) {
-                          success = await accountService.loginWithPin(accountIdController.text.trim(), loginPinController.text);
+                          success = await accountService.loginWithPin(accountIdController.text.trim().toUpperCase(), loginPinController.text);
                         } else {
                           success = await accountService.createAccount(pinController.text);
                         }
-                        if (success && mounted) {
-                          Navigator.pop(ctx);
+                        if (!mounted) return;
+                        if (success) {
+                          Navigator.pop(context);
                           _animateConnect();
                           vpnService.connect();
                         } else {

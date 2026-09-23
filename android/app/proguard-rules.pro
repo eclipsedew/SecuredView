@@ -5,3 +5,14 @@
 -keepattributes *Annotation*
 -keepattributes SourceFile,LineNumberTable
 -renamesourcefileattribute SourceFile
+
+# usque / gomobile (MASQUE) bindings
+-keep class mobile.** { *; }
+-keep class go.** { *; }
+-keep class go.Seq { *; }
+-keep class go.Seq$* { *; }
+-dontwarn mobile.**
+-dontwarn go.**
+-keepclasseswithmembers class * {
+    @java.lang.Deprecated <methods>;
+}

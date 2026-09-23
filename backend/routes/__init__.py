@@ -45,7 +45,7 @@ def _max_devices(account: Account) -> int:
 
 
 @router.post("/register", response_model=TokenResponse)
-@limiter.limit("3/hour")
+@limiter.limit("20/hour")
 def register(request: Request, req: AccountCreate, db: Session = Depends(get_db)):
     """Create a new account with a 4-digit PIN."""
     # Check if device is already registered to another account

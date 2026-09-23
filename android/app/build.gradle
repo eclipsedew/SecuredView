@@ -18,12 +18,12 @@ android {
     ndkVersion flutter.ndkVersion
 
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
     }
 
     kotlinOptions {
-        jvmTarget = '1.8'
+        jvmTarget = '17'
     }
 
     sourceSets {
@@ -43,7 +43,7 @@ android {
 
     defaultConfig {
         applicationId "com.warpvpn.app"
-        minSdkVersion 24
+        minSdkVersion 26
         targetSdkVersion flutter.targetSdkVersion
         versionCode flutter.versionCode
         versionName flutter.versionName
@@ -70,4 +70,6 @@ flutter {
 dependencies {
     implementation "org.jetbrains.kotlin:kotlin-stdlib:2.2.20"
     implementation "androidx.core:core-ktx:1.15.0"
+    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0"
+    implementation files('libs/usque.aar')
 }

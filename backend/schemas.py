@@ -71,7 +71,8 @@ class AccountLogin(BaseModel):
     @field_validator("account_id")
     @classmethod
     def account_id_hex(cls, v):
-        if not re.fullmatch(r"[a-f0-9]{16}", v):
+        v = v.strip().upper()
+        if not re.fullmatch(r"[A-F0-9]{16}", v):
             raise ValueError("Invalid account ID format")
         return v
 

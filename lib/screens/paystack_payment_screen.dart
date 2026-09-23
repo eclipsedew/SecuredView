@@ -1,11 +1,8 @@
 import 'dart:async';
-import 'dart:io';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
-import '../services/api_service.dart';
 import '../services/account_service.dart';
 import '../services/paystack_service.dart';
 import '../theme/app_theme.dart';
@@ -63,11 +60,29 @@ class _PaystackPaymentScreenState extends State<PaystackPaymentScreen> {
         _loading = false;
       });
 
-      // On desktop, open in browser; on mobile we'd use webview
-      if (kIsWeb || Platform.isLinux || Platform.isWindows || Platform.isMacOS) {
-        await launchUrl(Uri.parse(result.authorizationUrl));
-        _showVerificationSheet();
+      // Open Paystack checkout in the system browser (all platforms).
+      // After payment the user returns to the app and taps "I Completed Payment".
+      final opened = await launchUrl(
+        Uri.parse(result.authorizationUrl),
+        mode: LaunchMode.externalApplication,
+      );
+      if (!opened && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Could not open the browser. Tap below to copy the payment link.',
+            ),
+            action: SnackBarAction(
+              label: 'Open',
+              onPressed: () => launchUrl(
+                Uri.parse(result.authorizationUrl),
+                mode: LaunchMode.externalApplication,
+              ),
+            ),
+          ),
+        );
       }
+      if (mounted) _showVerificationSheet();
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -254,6 +269,23 @@ class _PaystackPaymentScreenState extends State<PaystackPaymentScreen> {
           ),
         ),
         const SizedBox(height: 12),
+        OutlinedButton.icon(
+          onPressed: () {
+            if (_authorizationUrl != null) {
+              launchUrl(
+                Uri.parse(_authorizationUrl!),
+                mode: LaunchMode.externalApplication,
+              );
+            }
+          },
+          icon: const Icon(Icons.open_in_browser_rounded, size: 18),
+          label: Text('Open Browser', style: GoogleFonts.publicSans()),
+          style: OutlinedButton.styleFrom(
+            side: const BorderSide(color: AppTheme.line2),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(2)),
+          ),
+        ),
+        const SizedBox(height: 8),
         TextButton(
           onPressed: () => Navigator.pop(context),
           child: Text('Cancel', style: GoogleFonts.publicSans(color: AppTheme.muted)),
