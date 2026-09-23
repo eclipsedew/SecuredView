@@ -39,9 +39,12 @@ jobs:
           git clone https://github.com/justinwoo280/usque.git usque-src
           git -C usque-src checkout db42acb8ee902daba516e765321aa279a57fc2db
           cd usque-src
-          CGO_ENABLED=0 go build -ldflags="-s -w" -o ../windows/bundled/usque.exe .
-          ls -la ../windows/bundled/usque.exe
+          CGO_ENABLED=0 go build -ldflags="-s -w" -o "$GITHUB_WORKSPACE/windows/bundled/usque.exe" .
+          ls -la "$GITHUB_WORKSPACE/windows/bundled/usque.exe"
       - run: flutter build windows --release
+        env:
+          # Avoid flaky LNK1327 (mt.exe) on shared runners when possible
+          FLUTTER_VERBOSITY: warning
       - name: Ensure usque.exe is in Release folder
         shell: bash
         run: |
