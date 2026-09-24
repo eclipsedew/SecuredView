@@ -4,8 +4,9 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from fastapi.staticfiles import StaticFiles
 from slowapi.errors import RateLimitExceeded
-from starlette.responses import HTMLResponse, JSONResponse
+from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 # Load .env file (local dev only — Render injects real env vars)
 _env_file = Path(__file__).parent / ".env"
@@ -108,11 +109,27 @@ app.include_router(paystack_router)
 app.include_router(admin_router)
 app.include_router(webhooks_router)
 
+# ── Website (served from service root; API stays under /api) ──
+SITE_DIR = Path(__file__).parent / "static" / "site"
+STATIC_DIR = Path(__file__).parent / "static"
 
-@app.get("/")
+
+def _site_html(filename: str) -> HTMLResponse:
+    path = SITE_DIR / filename
+    if not path.is_file():
+        return HTMLResponse("<h1>404 Not Found</h1>", status_code=404)
+    return HTMLResponse(path.read_text(encoding="utf-8"))
+
+
+def _redirect(to: str) -> RedirectResponse:
+    return RedirectResponse(url=to, status_code=308)
+
+
+@app.get("/", response_class=HTMLResponse)
 @limiter.exempt
-def root():
-    return {"name": "SecureVPN API", "version": "1.0.0", "status": "running"}
+def site_home():
+    """Marketing home page (domain root when a custom domain is attached)."""
+    return _site_html("index.html")
 
 
 @app.get("/health")
@@ -121,14 +138,66 @@ def health():
     return {"status": "ok"}
 
 
+@app.get("/apps", response_class=HTMLResponse)
+@app.get("/apps.html", response_class=HTMLResponse)
+@limiter.exempt
+def site_apps():
+    return _site_html("apps.html")
+
+
+@app.get("/network", response_class=HTMLResponse)
+@app.get("/network.html", response_class=HTMLResponse)
+@limiter.exempt
+def site_network():
+    return _site_html("network.html")
+
+
+@app.get("/pricing", response_class=HTMLResponse)
+@app.get("/free", response_class=HTMLResponse)
+@app.get("/free.html", response_class=HTMLResponse)
+@limiter.exempt
+def site_pricing():
+    return _site_html("free.html")
+
+
+@app.get("/privacy", response_class=HTMLResponse)
+@app.get("/privacy.html", response_class=HTMLResponse)
+@limiter.exempt
+def site_privacy():
+    return _site_html("privacy.html")
+
+
+@app.get("/terms", response_class=HTMLResponse)
+@app.get("/terms.html", response_class=HTMLResponse)
+@limiter.exempt
+def site_terms():
+    return _site_html("terms.html")
+
+
 # CN-reachable download page (Vercel is often RST/reset from mainland China)
 @app.get("/download", response_class=HTMLResponse)
+@app.get("/download.html", response_class=HTMLResponse)
 @limiter.exempt
 def download_page():
-    path = Path(__file__).parent / "static" / "download.html"
+    path = STATIC_DIR / "download.html"
     if not path.exists():
         return HTMLResponse("<h1>Download</h1><p>See GitHub releases</p>", status_code=200)
     return HTMLResponse(path.read_text(encoding="utf-8"))
+
+
+@app.get("/index.html")
+@limiter.exempt
+def site_index_alias():
+    return _redirect("/")
+
+
+# Static site assets (css / img / js)
+if (SITE_DIR / "css").is_dir():
+    app.mount("/css", StaticFiles(directory=SITE_DIR / "css"), name="css")
+if (SITE_DIR / "img").is_dir():
+    app.mount("/img", StaticFiles(directory=SITE_DIR / "img"), name="img")
+if (SITE_DIR / "js").is_dir():
+    app.mount("/js", StaticFiles(directory=SITE_DIR / "js"), name="js")
 
 
 # ── Seed accounts/devices/subscriptions from seed.json ───

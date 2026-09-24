@@ -20,7 +20,7 @@ else:
     except OSError:
         pass
 
-# Paths that don't require API key (public)
+# Public API paths (website pages/assets are public by default — see middleware)
 PUBLIC_PATHS = {
     "/",
     "/health",
@@ -34,20 +34,28 @@ PUBLIC_PATHS = {
 
 
 class ApiKeyMiddleware(BaseHTTPMiddleware):
-    """Validates X-Api-Key header on all requests except public paths."""
+    """Require X-Api-Key on /api/* except public endpoints and webhooks.
+
+    The marketing website (/, /apps, /network, /pricing, /privacy, /terms,
+    /download, /css, /img, /js, docs) is intentionally public so a future
+    domain can serve the whole site from this service root.
+    """
 
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
 
-        # Skip API key check for public paths
-        if path in PUBLIC_PATHS or path.startswith("/docs") or path.startswith("/openapi") or path.startswith("/redoc"):
+        # Website, static assets, health, OpenAPI docs — always public
+        if not (path == "/api" or path.startswith("/api/")):
             return await call_next(request)
 
-        # Skip for Paystack webhook (Paystack can't send our custom header)
+        # Explicit public API endpoints
+        if path in PUBLIC_PATHS:
+            return await call_next(request)
+
+        # Paystack webhook cannot send our custom header
         if path.startswith("/api/webhooks"):
             return await call_next(request)
 
-        # Check API key
         api_key = request.headers.get("X-Api-Key")
         if not api_key or not secrets.compare_digest(api_key, APP_API_KEY):
             return JSONResponse(

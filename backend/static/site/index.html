@@ -1,0 +1,439 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#eceef0">
+<title>SecuredView VPN | Private access to the open internet</title>
+<meta name="description" content="13 server locations worldwide from $3.99. Annual plan $30/year. Full encryption, no logs.">
+<link rel="icon" type="image/svg+xml" href="/img/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=JetBrains+Mono:wght@400;500&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/styles.css">
+<script>document.documentElement.classList.add("js")</script>
+<meta property="og:type" content="website">
+<meta property="og:title" content="SecuredView VPN | Private access to the open internet">
+<meta property="og:description" content="13 server locations worldwide from $3.99. Annual plan $30/year. Full encryption, no logs.">
+<meta property="og:image" content="/img/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+</head>
+<body>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="hdr">
+  <div class="wrap hdr-in">
+    <a class="brand" href="/" aria-label="SecuredView VPN home">
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 8.5V3h5.5M15.5 3H21v5.5M21 15.5V21h-5.5M8.5 21H3v-5.5" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3.2" fill="#163f8f"/></svg>
+      <span>SecuredView VPN</span>
+    </a>
+    <div class="hdr-right">
+      <nav class="nav" aria-label="Primary">
+        <a href="/network">Network</a>
+        <a href="/apps">Apps</a>
+        <a href="/pricing">Pricing</a>
+        <a href="/privacy">Privacy</a>
+      </nav>
+      <a class="btn btn-fill" href="/apps">Get SecuredView VPN</a>
+      <button class="burger" id="burger" aria-label="Open menu" aria-expanded="false" aria-controls="mnav">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+      </button>
+    </div>
+  </div>
+</header>
+<nav class="mnav" id="mnav" aria-label="Primary">
+  <a href="/network">Network</a>
+  <a href="/apps">Apps</a>
+  <a href="/pricing">Pricing</a>
+  <a href="/privacy">Privacy</a>
+  <a class="btn btn-fill" href="/apps">Get SecuredView VPN</a>
+</nav>
+
+<main id="main">
+
+  <!-- hero -->
+  <section class="hero">
+    <div class="wrap hero-in">
+      <div>
+        <p class="lbl">Encrypted routing, 13 locations worldwide</p>
+        <h1>The open internet, reached privately.</h1>
+        <p class="lead">SecuredView VPN seals your connection and sends it out through our own exit nodes. 13 server locations worldwide with full ChaCha20 Poly1305 encryption. No logs. Plans from $3.99.</p>
+        <div class="hero-cta">
+          <a class="btn btn-fill" href="/apps">Get SecuredView VPN
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M8 2v9M4.5 7.5 8 11l3.5-3.5M2.5 13.5h11"/></svg>
+          </a>
+          <a class="btn btn-line" href="/network">See the network</a>
+        </div>
+      </div>
+
+      <!-- route trace -->
+      <div class="trace" id="trace">
+        <div class="trace-bar">
+          <span class="lbl">Route trace</span>
+          <span class="status" data-state="live"><i></i><span>Connected</span></span>
+        </div>
+
+        <svg class="trace-svg" viewBox="0 0 540 128" role="img" aria-label="A request leaves your device inside an encrypted tunnel, passes through a SecuredView VPN exit node, and continues to the open internet unsealed.">
+          <!-- your device -->
+          <rect class="wire" x="16" y="52" width="50" height="34" rx="2"/>
+          <rect class="thin" x="23" y="58" width="36" height="22" rx="1"/>
+          <path class="thin" d="M28 92h26"/>
+          <text class="cap" x="41" y="112" text-anchor="middle">Device</text>
+
+          <!-- encrypted leg -->
+          <text class="cap cap-a" x="155" y="44" text-anchor="middle">Encrypted</text>
+          <path class="leg leg-enc chan" d="M78 63H232"/>
+          <path class="leg leg-enc chan" d="M78 75H232"/>
+          <path class="hatch" d="M90 63v12M102 63v12M114 63v12M126 63v12M138 63v12M150 63v12M162 63v12M174 63v12M186 63v12M198 63v12M210 63v12M222 63v12"/>
+
+          <!-- exit node -->
+          <g class="g-node">
+            <rect class="node" x="240" y="52" width="42" height="34" rx="2"/>
+            <rect class="core" x="255" y="63" width="12" height="12"/>
+            <path class="thin" d="M240 58h-5M240 80h-5M282 58h5M282 80h5"/>
+          </g>
+          <text class="cap" x="261" y="112" text-anchor="middle">Exit node</text>
+
+          <!-- public leg -->
+          <text class="cap" x="367" y="44" text-anchor="middle">Public</text>
+          <path class="leg leg-pub thin" d="M292 69H444"/>
+
+          <!-- destination -->
+          <g class="g-dest">
+            <circle class="thin" cx="474" cy="69" r="20"/>
+            <ellipse class="thin" cx="474" cy="69" rx="8.5" ry="20"/>
+            <path class="thin" d="M454.5 69h39M457 59h34M457 79h34"/>
+          </g>
+          <text class="cap" x="474" y="112" text-anchor="middle">Internet</text>
+        </svg>
+
+        <dl class="readout">
+          <div class="ro"><dt>Exit</dt><dd>Amsterdam, Netherlands</dd></div>
+          <div class="ro"><dt>Cipher</dt><dd>ChaCha20 Poly1305</dd></div>
+          <div class="ro"><dt>Handshake</dt><dd>1.2 ms</dd></div>
+          <div class="ro"><dt>Throughput</dt><dd>940 Mbit/s<span class="bar"><i></i></span></dd></div>
+        </dl>
+      </div>
+    </div>
+
+    <div class="wrap">
+      <div class="stats">
+        <div class="stat"><div class="stat-v" data-net="countries">13</div><span class="lbl">Server locations</span></div>
+        <div class="stat"><div class="stat-v" data-net="nodes">13</div><span class="lbl">Exit nodes</span></div>
+        <div class="stat"><div class="stat-v">$3.99/mo</div><span class="lbl">Starting price</span></div>
+        <div class="stat"><div class="stat-v">None</div><span class="lbl">Logs kept</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- how it works -->
+  <section class="sec sec-flat">
+    <div class="wrap">
+      <div class="sec-head rv">
+        <p class="lbl">What happens</p>
+        <div>
+          <h2>Three moves, start to finish.</h2>
+          <p>A VPN is not complicated, and a company that explains it plainly has less room to mislead you. This is the whole of it.</p>
+        </div>
+      </div>
+
+      <div class="steps rv">
+        <div class="step">
+          <div class="step-n">01</div>
+          <div>
+            <h3>The handshake</h3>
+            <div class="step-t">1.2 ms, keys held in memory</div>
+          </div>
+          <div><p>Your device and the exit node agree on a set of keys that only the two of them hold. The keys are new for every session and are never written to disk, so there is nothing to recover from a seized machine.</p></div>
+        </div>
+        <div class="step">
+          <div class="step-n">02</div>
+          <div>
+            <h3>The tunnel</h3>
+            <div class="step-t">ChaCha20 Poly1305</div>
+          </div>
+          <div><p>Everything leaving your device is sealed inside that tunnel. Whoever runs the network you are sitting on can see that you opened a connection to SecuredView VPN. They cannot see what you asked for, or who you asked.</p></div>
+        </div>
+        <div class="step">
+          <div class="step-n">03</div>
+          <div>
+            <h3>The exit</h3>
+            <div class="step-t">13 locations worldwide</div>
+          </div>
+          <div><p>Traffic leaves from whichever node you picked and continues to its destination in the clear, as it always would. The site you reached sees the node, not you, and we hold nothing that connects the two.</p></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ledger -->
+  <section class="sec">
+    <div class="wrap">
+      <div class="sec-head rv">
+        <p class="lbl">The ledger</p>
+        <div>
+          <h2>What we keep, written out in full.</h2>
+          <p>Every provider says no logs. Few of them list what the phrase covers. Here is the entire record, including the one thing we do hold on to.</p>
+        </div>
+      </div>
+
+      <div class="tscroll rv">
+        <table class="tbl ledger">
+          <thead>
+            <tr>
+              <th scope="col">Record</th>
+              <th scope="col">Usual industry practice</th>
+              <th scope="col">Held by SecuredView VPN</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td class="name">Connection timestamps</td><td>Retained 30 to 90 days</td><td class="keep none">Nothing</td></tr>
+            <tr><td class="name">Your address on the way in</td><td>Retained for abuse handling</td><td class="keep none">Nothing</td></tr>
+            <tr><td class="name">Name lookups you make</td><td>Logged by the resolver</td><td class="keep none">Nothing</td></tr>
+            <tr><td class="name">Sites and services reached</td><td>Sometimes sampled</td><td class="keep none">Nothing</td></tr>
+            <tr><td class="name">Bandwidth per person</td><td>Metered for plan limits</td><td class="keep none">Nothing</td></tr>
+            <tr><td class="name">Billing identity</td><td>Card or wallet on file</td><td class="keep none">Nothing to bill</td></tr>
+            <tr><td class="name">Email address</td><td>Required at signup</td><td class="keep none">Not required</td></tr>
+            <tr><td class="name">Node health and load</td><td>Collected per session</td><td class="keep">Totals only, per node, per minute</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="sec-body rv" style="margin-top:44px">
+        <div></div>
+        <div class="note">
+          <span class="lbl">On that last row</span>
+          <p>We count connections and bytes per node so we know when to add capacity. The counter is a single number per node per minute. It carries no address, no session, and no way to pull one person back out of it. Saying we collect nothing at all would be an easier sentence to write and a false one.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- network -->
+  <section class="sec">
+    <div class="wrap">
+      <div class="sec-head rv">
+        <p class="lbl">The network</p>
+        <div>
+          <h2>Owned hardware, in racks we can point at.</h2>
+          <p>No resold capacity and no virtual servers borrowed from someone else's cloud. Every node runs from memory on machines we control, in facilities we have walked through.</p>
+        </div>
+      </div>
+
+      <div class="map-wrap rv">
+        <div class="map-bar">
+          <span class="lbl">Exit nodes, live</span>
+          <span class="lbl"><span data-net="cities">13</span> cities &nbsp;/&nbsp; <span data-net="countries">13</span> countries &nbsp;/&nbsp; <span data-net="capacity">26</span> Tbit/s</span>
+        </div>
+        <div data-map="preview"></div>
+      </div>
+
+      <div class="sec-body rv" style="margin-top:36px">
+        <div></div>
+        <div><a class="tlink" href="/network">Every location, with capacity
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M2 8h11M9 4l4 4-4 4"/></svg>
+        </a></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- protocols -->
+  <section class="sec">
+    <div class="wrap">
+      <div class="sec-head rv">
+        <p class="lbl">Transport</p>
+        <div>
+          <h2>Three ways through, measured honestly.</h2>
+          <p>Figures come from a gigabit line in Frankfurt reaching a node in Amsterdam. Your own numbers will be lower, and any provider quoting you round ones is quoting a laboratory.</p>
+        </div>
+      </div>
+
+      <div class="tscroll rv">
+        <table class="tbl">
+          <thead>
+            <tr>
+              <th scope="col">Transport</th>
+              <th scope="col">Handshake</th>
+              <th scope="col">Throughput</th>
+              <th scope="col">Survives a network change</th>
+              <th scope="col">Reach for it when</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="name">Tunnel</td>
+              <td class="num">1.2 ms</td>
+              <td class="num">940 Mbit/s</td>
+              <td>Yes</td>
+              <td>Always, unless something blocks it</td>
+            </tr>
+            <tr>
+              <td class="name">Classic</td>
+              <td class="num">320 ms</td>
+              <td class="num">410 Mbit/s</td>
+              <td>No</td>
+              <td>An older router or device needs it</td>
+            </tr>
+            <tr>
+              <td class="name">Quiet</td>
+              <td class="num">480 ms</td>
+              <td class="num">280 Mbit/s</td>
+              <td>Yes</td>
+              <td>The network you are on filters VPN traffic</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- apps -->
+  <section class="sec">
+    <div class="wrap">
+      <div class="sec-head rv">
+        <p class="lbl">Apps</p>
+        <div>
+          <h2>One switch, on everything you own.</h2>
+          <p>Open it, pick a city or leave it on automatic, and turn it on. Nothing to configure and nothing to sign into.</p>
+        </div>
+      </div>
+
+      <div class="apps rv">
+        <div class="app">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M10.5 18.5h3"/></svg>
+          <h3>Android</h3>
+          <p>Version 9 and up. Always on toggle, per app routing, split tunnel.</p>
+          <span class="meta">18 MB</span>
+          <a class="tlink" href="/apps">Download</a>
+        </div>
+        <div class="app">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M10 4.5h4"/></svg>
+          <h3>iPhone and iPad</h3>
+          <p>iOS 16 and up. Connects on untrusted networks without being asked.</p>
+          <span class="meta">14 MB</span>
+          <a class="tlink" href="/apps">Download</a>
+        </div>
+        <div class="app">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="2.5" y="4" width="19" height="13" rx="1.5"/><path d="M2 20.5h20"/></svg>
+          <h3>Desktop</h3>
+          <p>Windows, macOS and Linux. Kill switch on by default.</p>
+          <span class="meta">26 MB</span>
+          <a class="tlink" href="/apps">Download</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- funding statement -->
+  <section class="stmt">
+    <div class="wrap">
+      <div class="sec-head rv">
+        <p class="lbl">SecuredView VPN Premium</p>
+        <div>
+          <h2>13 servers worldwide. Full encryption on every one.</h2>
+          <p>All 13 server locations run full ChaCha20 Poly1305 encryption with a strict no-logs policy. Plans start at $3.99 per 30 days, with options for 60 and 90 days, or $30 for a full year. Three-device support and priority speeds on every plan. There is no advertising, no data selling, and no contract with anyone who buys browsing data.</p>
+          <a class="tlink" href="/pricing">See pricing and plans
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M2 8h11M9 4l4 4-4 4"/></svg>
+          </a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- questions -->
+  <section class="sec sec-flat">
+    <div class="wrap">
+      <div class="sec-head rv">
+        <p class="lbl">Questions</p>
+        <div>
+          <h2>The ones worth asking a VPN service.</h2>
+        </div>
+      </div>
+
+      <div class="faq rv">
+        <details>
+          <summary>How much does it cost?</summary>
+          <p>Plans start at $3.99 for 30 days, $7 for 60 days, $13 for 90 days, or $30 for a full year. All plans include 13 server locations, 3 devices, priority speeds, and full ChaCha20 Poly1305 encryption. No logs on any plan.</p>
+        </details>
+        <details>
+          <summary>What do I get?</summary>
+          <p>Thirteen server locations worldwide (US East, US West, UK London, Germany Frankfurt, Japan Tokyo, Singapore, Australia Sydney, Brazil Sao Paulo, India Mumbai, Netherlands Amsterdam, France Paris, Canada Toronto), support for up to 3 devices, and priority speeds. Plans start at $3.99 per 30 days.</p>
+        </details>
+        <details>
+          <summary>What does no logs actually mean here?</summary>
+          <p>It means the eight rows in the ledger above, and nothing hidden behind them. We hold per node counters and nothing else. The privacy page lists what those counters contain, field by field.</p>
+        </details>
+        <details>
+          <summary>Is the speed or the data limited?</summary>
+          <p>No. There is no cap, no throttle after a threshold, and no slow queue you get put in. All users share the same network infrastructure with priority routing.</p>
+        </details>
+        <details>
+          <summary>Which country's laws apply?</summary>
+          <p>SecuredView VPN operates under a strict no-logs policy. The service is structured to minimize data collection — no personal information is stored beyond what is necessary for account functionality. Nodes in other countries are subject to local law where they sit, which is one reason they run from memory and hold nothing.</p>
+        </details>
+        <details>
+          <summary>What happens when a court asks for my traffic?</summary>
+          <p>We answer, because refusing to answer a valid order is not a strategy. What we hand over is what we have, which is a counter showing how many connections a node carried in a given minute. We publish the count of requests received and the count answered with data twice a year.</p>
+        </details>
+        <details>
+          <summary>Can I run it on my router?</summary>
+          <p>Yes. Configuration files for the standard client work on most routers that support it, and the setup page walks through the common ones. Nothing about the router path is second class.</p>
+        </details>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="ftr">
+  <div class="wrap">
+    <div class="ftr-in">
+      <div>
+        <a class="brand" href="/" aria-label="SecuredView VPN home">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 8.5V3h5.5M15.5 3H21v5.5M21 15.5V21h-5.5M8.5 21H3v-5.5" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3.2" fill="#163f8f"/></svg>
+          <span>SecuredView VPN</span>
+        </a>
+        <p class="about">Encrypted routing through 13 server locations we own. Plans from $3.99.</p>
+      </div>
+      <div>
+        <h4>Product</h4>
+        <ul>
+          <li><a href="/apps">Apps</a></li>
+          <li><a href="/network">Network</a></li>
+          <li><a href="/apps#setup">Manual setup</a></li>
+          <li><a href="/apps#routers">Routers</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Company</h4>
+        <ul>
+          <li><a href="/pricing">Pricing</a></li>
+          <li><a href="/privacy">Privacy and logs</a></li>
+          <li><a href="/terms">Terms of Service</a></li>
+          <li><a href="/privacy#audit">Independent audit</a></li>
+          <li><a href="/privacy#transparency">Transparency</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Contact</h4>
+        <ul>
+          <li><a href="mailto:securedviewvpn@protonmail.com">securedviewvpn@protonmail.com</a></li>
+          <li><a href="https://github.com/eclipsedew/SecuredView">GitHub</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="ftr-btm">
+      <span>&copy; <span data-year>2026</span> SecuredView VPN</span>
+      <span>Built with privacy in mind</span>
+      <span>Status: all nodes reachable</span>
+    </div>
+  </div>
+</footer>
+
+<script src="/js/network.js" defer></script>
+<script src="/js/main.js" defer></script>
+</body>
+</html>

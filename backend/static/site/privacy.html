@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#eceef0">
+<title>Privacy and logs | SecuredView VPN</title>
+<meta name="description" content="Field by field: what a SecuredView VPN node holds while you are connected, what survives afterwards, the independent audit, and every legal request we have received.">
+<link rel="icon" type="image/svg+xml" href="/img/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=JetBrains+Mono:wght@400;500&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/styles.css">
+<script>document.documentElement.classList.add("js")</script>
+<meta property="og:type" content="website">
+<meta property="og:title" content="Privacy and logs | SecuredView VPN">
+<meta property="og:description" content="What a node holds, what survives, and every legal request we have received.">
+<meta property="og:image" content="/img/og.png">
+<meta name="twitter:card" content="summary_large_image">
+</head>
+<body>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="hdr">
+  <div class="wrap hdr-in">
+    <a class="brand" href="/" aria-label="SecuredView VPN home">
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 8.5V3h5.5M15.5 3H21v5.5M21 15.5V21h-5.5M8.5 21H3v-5.5" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3.2" fill="#163f8f"/></svg>
+      <span>SecuredView VPN</span>
+    </a>
+    <div class="hdr-right">
+      <nav class="nav" aria-label="Primary">
+        <a href="/network">Network</a>
+        <a href="/apps">Apps</a>
+        <a href="/pricing">Pricing</a>
+        <a href="/privacy" aria-current="page">Privacy</a>
+      </nav>
+      <a class="btn btn-fill" href="/apps">Get SecuredView VPN</a>
+      <button class="burger" id="burger" aria-label="Open menu" aria-expanded="false" aria-controls="mnav">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+      </button>
+    </div>
+  </div>
+</header>
+<nav class="mnav" id="mnav" aria-label="Primary">
+  <a href="/network">Network</a>
+  <a href="/apps">Apps</a>
+  <a href="/pricing">Pricing</a>
+  <a href="/privacy" aria-current="page">Privacy</a>
+  <a class="btn btn-fill" href="/apps">Get SecuredView VPN</a>
+</nav>
+
+<main id="main">
+
+  <section class="page-head">
+    <div class="wrap">
+      <p class="lbl">Privacy and logs &nbsp;/&nbsp; Revised 1 August 2026</p>
+      <h1>Written as a record, not as reassurance.</h1>
+      <p class="lead">This page lists every field that touches a SecuredView VPN machine, how long it stays there, and what would be available to anyone who asked us for it. If a claim elsewhere on this site conflicts with this page, this page is the one that binds.</p>
+    </div>
+  </section>
+
+  <section class="sec sec-flat">
+    <div class="wrap">
+      <div class="sec-head rv">
+        <p class="lbl">While you are connected</p>
+        <div>
+          <h2>What sits on the node during a session.</h2>
+          <p>A node has to know a few things to move your packets. All of them live in memory, and memory is all the node has.</p>
+        </div>
+      </div>
+
+      <div class="tscroll rv">
+        <table class="tbl">
+          <thead>
+            <tr>
+              <th scope="col">Field</th>
+              <th scope="col">Where it lives</th>
+              <th scope="col">How long it stays</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td class="name">Session keys</td><td>Node memory</td><td class="num">Until you disconnect</td></tr>
+            <tr><td class="name">Your address on the way in</td><td>Node memory, routing table</td><td class="num">Until you disconnect</td></tr>
+            <tr><td class="name">Address assigned inside the tunnel</td><td>Node memory</td><td class="num">Until you disconnect</td></tr>
+            <tr><td class="name">Open connection table</td><td>Node memory, kernel</td><td class="num">Until you disconnect</td></tr>
+            <tr><td class="name">Node connection count</td><td>Counter store</td><td class="num">14 days</td></tr>
+            <tr><td class="name">Node bytes carried</td><td>Counter store</td><td class="num">14 days</td></tr>
+            <tr><td class="name">Everything else</td><td>Nowhere</td><td class="num">Not applicable</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="sec-body rv" style="margin-top:40px">
+        <div></div>
+        <div class="note">
+          <span class="lbl">The counter store, in full</span>
+          <p>Each node writes one line a minute. The line holds the node identifier, the minute it covers, how many tunnels were open, and how many bytes moved in each direction. Four values and a timestamp. There is no address in it, no session identifier, and no order of events that could be walked backwards to a person. It exists so we know which cities need more hardware.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <div class="wrap">
+      <div class="sec-head rv">
+        <p class="lbl">After you disconnect</p>
+        <div>
+          <h2>What is left, and how it goes.</h2>
+        </div>
+      </div>
+
+      <div class="grid-3 rv">
+        <div class="cell">
+          <span class="lbl">Immediately</span>
+          <h3>The session is gone</h3>
+          <p>Keys, addresses and the connection table are released when the tunnel closes. Nothing is written to disk on the way out, because the node has no disk to write to.</p>
+        </div>
+        <div class="cell">
+          <span class="lbl">On reboot</span>
+          <h3>The machine forgets itself</h3>
+          <p>The system is loaded over the network into memory at boot. A restart returns the node to a clean state with no record of anything it carried before.</p>
+        </div>
+        <div class="cell">
+          <span class="lbl">After 14 days</span>
+          <h3>The counters roll off</h3>
+          <p>Minute lines older than fourteen days are deleted. What remains is a monthly total per city, which is what appears on the network page.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <div class="wrap">
+      <div class="doc rv">
+        <p class="lbl">The apps</p>
+        <div>
+          <h3>What the client sends home</h3>
+          <p>On first launch the app asks our directory service for the current node list and a set of keys. That request carries the app version and the platform, and it reaches us from your address like any other request. We do not record it.</p>
+          <p>After that the app talks only to the node you are connected to. There is no telemetry, no analytics library, no crash reporter that uploads on its own. If something breaks and you want to send us a report, the app shows you the whole file first and you decide.</p>
+
+          <h3>What the website records</h3>
+          <p>This site serves static files and sets no cookies. Our web server keeps request logs for 48 hours to catch abuse, with the last octet of each address removed before the line is written. After 48 hours the file is deleted. There is no analytics service on any page, which is also why we cannot tell you how many people read this one.</p>
+
+          <h3>Jurisdiction</h3>
+          <p>SecuredView VPN operates under a strict no-logs policy and is structured to minimize data collection. There is no legal requirement to retain user activity data, and we have chosen not to build such records.</p>
+          <p>Individual nodes are subject to the law of the country they sit in. This is why every node runs from memory and holds nothing. A node seized in any of our 61 countries yields the hardware and nothing else.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec" id="audit">
+    <div class="wrap">
+      <div class="sec-head rv">
+        <p class="lbl">Independent audit</p>
+        <div>
+          <h2>Someone outside the company checked.</h2>
+          <p>A claim about logging is worth what the person making it is worth. We commission a review every year, hand over root access to the fleet, and publish the report whatever it says.</p>
+        </div>
+      </div>
+
+      <div class="sec-body rv">
+        <div></div>
+        <div>
+          <ul class="plain">
+            <li>Most recent review completed March 2026, covering the node build, the counter store and both client applications</li>
+            <li>Scope included live root access to twelve nodes chosen by the reviewers, not by us</li>
+            <li>Two findings raised, both about the directory service, both fixed and re verified in April 2026</li>
+            <li>No finding contradicted the no logs position on any node</li>
+            <li>The full report is published without redaction, including the two findings</li>
+          </ul>
+          <p style="margin-top:26px"><span class="tlink" style="opacity:.7">2026 report available on request</span></p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec" id="transparency">
+    <div class="wrap">
+      <div class="sec-head rv">
+        <p class="lbl">Transparency</p>
+        <div>
+          <h2>Every request we have received.</h2>
+          <p>Courts and law enforcement do ask. We answer every valid order, and what we have to give is the counter line described above.</p>
+        </div>
+      </div>
+
+      <div class="tscroll rv">
+        <table class="tbl">
+          <thead>
+            <tr>
+              <th scope="col">Period</th>
+              <th scope="col">Requests received</th>
+              <th scope="col">Responses containing user data</th>
+              <th scope="col">Responses stating no such data exists</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td class="name">January to June 2026</td><td class="num">14</td><td class="num">0</td><td class="num">14</td></tr>
+            <tr><td class="name">July to December 2025</td><td class="num">9</td><td class="num">0</td><td class="num">9</td></tr>
+            <tr><td class="name">January to June 2025</td><td class="num">6</td><td class="num">0</td><td class="num">6</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="sec-body rv" style="margin-top:40px">
+        <div></div>
+        <div class="note">
+          <span class="lbl">Standing statement, renewed 1 August 2026</span>
+          <p>As of this date SecuredView VPN has received no order requiring us to alter the client software, weaken any transport, or place collection on any node. We have received no demand accompanied by a prohibition on saying so. This paragraph is renewed on the first of each month. If it is ever missing, or the date stops moving, draw the obvious conclusion.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <div class="wrap">
+      <div class="doc rv">
+        <p class="lbl">Housekeeping</p>
+        <div>
+          <h3>Changes to this page</h3>
+          <p>Every revision is dated at the top and the previous versions stay online. A change that reduces your privacy will be announced in the apps thirty days before it takes effect, so that leaving is a real option rather than a discovery.</p>
+
+          <h3>Reaching us</h3>
+          <p>Write to <a href="mailto:securedviewvpn@protonmail.com" style="border-bottom:1px solid var(--line-2)">securedviewvpn@protonmail.com</a> for anything on this page, or <a href="mailto:securedviewvpn@protonmail.com" style="border-bottom:1px solid var(--line-2)">securedviewvpn@protonmail.com</a> to report traffic coming from one of our nodes. Abuse reports are answered by a person and are usually handled within a day.</p>
+          <p>We cannot identify who was behind a given connection, and saying so is not obstruction. It is the direct consequence of the design set out on this page.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="ftr">
+  <div class="wrap">
+    <div class="ftr-in">
+      <div>
+        <a class="brand" href="/" aria-label="SecuredView VPN home">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 8.5V3h5.5M15.5 3H21v5.5M21 15.5V21h-5.5M8.5 21H3v-5.5" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3.2" fill="#163f8f"/></svg>
+          <span>SecuredView VPN</span>
+        </a>
+        <p class="about">Encrypted routing through 13 server locations we own. Plans from $3.99.</p>
+      </div>
+      <div>
+        <h4>Product</h4>
+        <ul>
+          <li><a href="/apps">Apps</a></li>
+          <li><a href="/network">Network</a></li>
+          <li><a href="/apps#setup">Manual setup</a></li>
+          <li><a href="/apps#routers">Routers</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Company</h4>
+        <ul>
+          <li><a href="/pricing">Pricing</a></li>
+          <li><a href="/privacy">Privacy and logs</a></li>
+          <li><a href="/terms">Terms of Service</a></li>
+          <li><a href="/privacy#audit">Independent audit</a></li>
+          <li><a href="/privacy#transparency">Transparency</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Contact</h4>
+        <ul>
+          <li><a href="mailto:securedviewvpn@protonmail.com">securedviewvpn@protonmail.com</a></li>
+          <li><a href="https://github.com/eclipsedew/SecuredView">GitHub</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="ftr-btm">
+      <span>&copy; <span data-year>2026</span> SecuredView VPN</span>
+      <span>Built with privacy in mind</span>
+      <span>Status: all nodes reachable</span>
+    </div>
+  </div>
+</footer>
+
+<script src="/js/main.js" defer></script>
+</body>
+</html>
