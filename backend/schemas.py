@@ -122,9 +122,20 @@ class AccountInfo(BaseModel):
     trial_started_at: Optional[datetime] = None
     trial_ends_at: Optional[datetime] = None
     billing_ready: bool = False
+    device_fingerprint: Optional[str] = None
+    device_ids: list[str] = Field(default_factory=list)
 
     class Config:
         from_attributes = True
+
+
+class FingerprintPurgeRequest(BaseModel):
+    """Admin: wipe a hardware fingerprint and every account/trial claim tied to it."""
+    fingerprint: str = Field(..., min_length=8, max_length=128)
+    delete_accounts: bool = Field(
+        default=True,
+        description="Also delete accounts whose device_fingerprint matches (and their devices).",
+    )
 
 
 class TokenResponse(BaseModel):

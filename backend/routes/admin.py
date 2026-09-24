@@ -6,7 +6,8 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from database import get_db
 from models import Account, Device, Server, Subscription, FREE_MAX_DEVICES, PREMIUM_MAX_DEVICES
-from schemas import ServerStats, AdminLogin, TokenResponse, AccountInfo
+from schemas import ServerStats, AdminLogin, TokenResponse, AccountInfo, FingerprintPurgeRequest
+from models import TrialClaim
 from auth import verify_admin, create_access_token, require_auth_or_admin
 from limiter import limiter
 
@@ -111,6 +112,10 @@ def list_accounts(
         device_count = db.query(func.count(Device.id)).filter(
             Device.account_id == acc.id, Device.is_active == True
         ).scalar()
+        device_ids = [
+            r[0] for r in db.query(Device.device_id)
+            .filter(Device.account_id == acc.id).all()
+        ]
         result.append(AccountInfo(
             id=acc.id,
             display_name=acc.display_name,
@@ -119,6 +124,12 @@ def list_accounts(
             device_count=device_count,
             max_devices=_max_devices(acc),
             created_at=acc.created_at,
+            is_trial=bool(acc.is_trial),
+            trial_started_at=acc.trial_started_at,
+            trial_ends_at=acc.trial_ends_at,
+            billing_ready=bool(acc.billing_ready),
+            device_fingerprint=acc.device_fingerprint,
+            device_ids=device_ids,
         ))
     return result
 
@@ -135,6 +146,7 @@ def get_account(
     device_count = db.query(func.count(Device.id)).filter(
         Device.account_id == acc.id, Device.is_active == True
     ).scalar()
+    device_ids = [r[0] for r in db.query(Device.device_id).filter(Device.account_id == acc.id).all()]
     return AccountInfo(
         id=acc.id,
         display_name=acc.display_name,
@@ -143,27 +155,174 @@ def get_account(
         device_count=device_count,
         max_devices=_max_devices(acc),
         created_at=acc.created_at,
+        is_trial=bool(acc.is_trial),
+        trial_started_at=acc.trial_started_at,
+        trial_ends_at=acc.trial_ends_at,
+        billing_ready=bool(acc.billing_ready),
+        device_fingerprint=acc.device_fingerprint,
+        device_ids=device_ids,
     )
 
 
 @router.delete("/accounts/{account_id}")
 def delete_account(
     account_id: str,
+    purge_fingerprint: bool = False,
     _=Depends(_require_admin),
     db: Session = Depends(get_db),
 ):
-    """Delete an account and devices — trial_claims rows are kept forever.
+    """Delete an account and devices.
 
-    Prevents delete → recreate → fresh 3-day trial on the same device.
+    Default: trial_claims rows are kept forever (blocks delete→recreate trial farm).
+    With ?purge_fingerprint=true: also delete trial_claims and clear the hardware
+    fingerprint so the physical device can claim a fresh trial.
     """
-    from models import TrialClaim
     acc = db.query(Account).filter(Account.id == account_id.upper()).first()
     if not acc:
         raise HTTPException(status_code=404, detail="Account not found")
+    fp = acc.device_fingerprint
+    if purge_fingerprint:
+        # Full wipe for this hardware: claims by account / fingerprint / device_id
+        device_ids = [d.device_id for d in list(acc.devices)]
+        claim_ids = {
+            r[0] for r in db.query(TrialClaim.id).filter(TrialClaim.account_id == acc.id).all()
+        }
+        if fp:
+            claim_ids |= {
+                r[0] for r in db.query(TrialClaim.id).filter(
+                    (TrialClaim.fingerprint == fp) | (TrialClaim.device_key == fp)
+                ).all()
+            }
+        if device_ids:
+            claim_ids |= {
+                r[0] for r in db.query(TrialClaim.id).filter(
+                    TrialClaim.device_key.in_(device_ids)
+                ).all()
+            }
+        if claim_ids:
+            db.query(TrialClaim).filter(TrialClaim.id.in_(claim_ids)).delete(
+                synchronize_session=False
+            )
+        if fp:
+            db.query(Account).filter(Account.device_fingerprint == fp).update(
+                {Account.device_fingerprint: None}, synchronize_session=False
+            )
+        db.delete(acc)
+        db.commit()
+        return {
+            "message": f"Account {account_id} deleted",
+            "purged_fingerprint": fp,
+            "purged": True,
+            "trial_claims_deleted": len(claim_ids),
+        }
     # Orphan trial claims (no FK) so the device cannot claim again
     db.query(TrialClaim).filter(TrialClaim.account_id == acc.id).update(
         {TrialClaim.account_id: None}
     )
     db.delete(acc)
     db.commit()
-    return {"message": f"Account {account_id} deleted"}
+    return {"message": f"Account {account_id} deleted", "purged": False}
+
+
+@router.post("/fingerprints/purge")
+def purge_fingerprint(
+    req: FingerprintPurgeRequest,
+    _=Depends(_require_admin),
+    db: Session = Depends(get_db),
+):
+    """Clear a hardware fingerprint and all accounts/trial claims bound to it.
+
+    Use for ops: wipe a test device so it can register a fresh trial.
+    """
+    fp = req.fingerprint.strip().lower()
+    fp_raw = req.fingerprint.strip()
+    accounts = db.query(Account).filter(Account.device_fingerprint == fp).all()
+    if not accounts:
+        accounts = db.query(Account).filter(Account.device_fingerprint == fp_raw).all()
+        fp_stored = fp_raw
+    else:
+        fp_stored = fp
+
+    account_ids = [a.id for a in accounts]
+    device_keys: list[str] = []
+    for a in accounts:
+        device_keys.extend([d.device_id for d in a.devices])
+
+    # Collect claim IDs first — union().delete() is not portable
+    claim_ids: set[int] = set()
+    for q in (
+        db.query(TrialClaim.id).filter(TrialClaim.fingerprint.in_([fp, fp_raw])),
+        db.query(TrialClaim.id).filter(TrialClaim.device_key.in_([fp, fp_raw])),
+    ):
+        claim_ids |= {r[0] for r in q.all()}
+    if account_ids:
+        claim_ids |= {
+            r[0] for r in db.query(TrialClaim.id)
+            .filter(TrialClaim.account_id.in_(account_ids)).all()
+        }
+    if device_keys:
+        claim_ids |= {
+            r[0] for r in db.query(TrialClaim.id)
+            .filter(TrialClaim.device_key.in_(device_keys)).all()
+        }
+    claims_deleted = 0
+    if claim_ids:
+        claims_deleted = db.query(TrialClaim).filter(
+            TrialClaim.id.in_(claim_ids)
+        ).delete(synchronize_session=False)
+
+    accounts_deleted = 0
+    if req.delete_accounts:
+        for a in accounts:
+            db.delete(a)  # cascades devices + subscriptions
+            accounts_deleted += 1
+    else:
+        db.query(Account).filter(Account.device_fingerprint.in_([fp, fp_raw])).update(
+            {Account.device_fingerprint: None}, synchronize_session=False
+        )
+
+    db.commit()
+    return {
+        "fingerprint": fp_stored,
+        "accounts_deleted": accounts_deleted,
+        "account_ids": account_ids,
+        "trial_claims_deleted": claims_deleted,
+        "device_keys": device_keys,
+    }
+
+
+@router.get("/fingerprints")
+def list_fingerprints(
+    _=Depends(_require_admin),
+    db: Session = Depends(get_db),
+):
+    """List distinct hardware fingerprints with linked accounts / trial claims."""
+    rows = (
+        db.query(
+            Account.device_fingerprint,
+            func.count(Account.id),
+            func.min(Account.created_at),
+        )
+        .filter(Account.device_fingerprint.isnot(None))
+        .group_by(Account.device_fingerprint)
+        .all()
+    )
+    out = []
+    for fp, n, created in rows:
+        acc_ids = [
+            r[0] for r in db.query(Account.id).filter(Account.device_fingerprint == fp).all()
+        ]
+        claim_filters = [(TrialClaim.fingerprint == fp), (TrialClaim.device_key == fp)]
+        if acc_ids:
+            claim_filters.append(TrialClaim.account_id.in_(acc_ids))
+        claim_count = (
+            db.query(func.count(TrialClaim.id)).filter(*claim_filters).scalar()
+        )
+        out.append({
+            "fingerprint": fp,
+            "account_count": n,
+            "account_ids": acc_ids,
+            "trial_claim_count": claim_count,
+            "first_seen": created,
+        })
+    return out
