@@ -6,7 +6,7 @@ library;
 const String kAppVersion = '1.0.0';
 
 /// Overwritten by `.github/workflows/build.yml` → `lib/app_version.dart`.
-const int kBuildNumber = 52;
+const int kBuildNumber = 53;
 
 const String kSupportEmail = 'securedviewvpn@protonmail.com';
 const String kGitHubRepo = 'eclipsedew/SecuredView';
