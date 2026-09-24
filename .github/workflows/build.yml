@@ -98,14 +98,32 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+      - name: Restore release keystore (required for updatable signatures)
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${ANDROID_KEYSTORE_BASE64:-}" ]; then
+            echo "::error::ANDROID_KEYSTORE_BASE64 secret missing — release would fall back to a random debug key and break updates"
+            exit 1
+          fi
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > android/app/release-key.jks
+          printf 'storePassword=%s\nkeyPassword=%s\nkeyAlias=%s\nstoreFile=release-key.jks\n' \
+            "$ANDROID_KEYSTORE_PASSWORD" "$ANDROID_KEY_PASSWORD" "$ANDROID_KEY_ALIAS" \
+            > android/key.properties
+          echo "key.properties ready (alias=${ANDROID_KEY_ALIAS})"
       - name: Stamp build number into app_version.dart
         shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          import re
           p = Path("lib/app_version.dart")
           text = p.read_text()
+          import re
           build = "${{ github.run_number }}"
           text = re.sub(r"const int kBuildNumber = \d+;", f"const int kBuildNumber = {build};", text)
           p.write_text(text)
@@ -113,6 +131,22 @@ jobs:
           PY
       - run: flutter pub get
       - run: flutter build apk --release
+      - name: Verify APK is release-signed (not debug)
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=build/app/outputs/flutter-apk/app-release.apk
+          BUILD_TOOLS=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          "$BUILD_TOOLS"/apksigner verify --print-certs "$APK" | tee /tmp/certs.txt
+          if grep -q "CN=Android Debug" /tmp/certs.txt; then
+            echo "::error::APK signed with debug certificate — updates would fail"
+            exit 1
+          fi
+          if ! grep -q "CN=SecuredView" /tmp/certs.txt; then
+            echo "::error::APK not signed with SecuredView release certificate"
+            exit 1
+          fi
+          echo "Release signature OK"
       - uses: actions/upload-artifact@v4
         with:
           name: android-apk
