@@ -19,9 +19,8 @@ Premium cross-platform VPN built on Cloudflare WARP **MASQUE** (Connect-IP). Sam
 | Linux    | usque if bundled, else `warp-cli` | Prefer usque MASQUE |
 
 ### API base URL
-All platforms call **`https://meridianglobal.site`** (`ApiService.publicTunnelUrl`).
-Vercel on that domain rewrites `/api/*` and `/health` → Cloudflare quick tunnel → local backend `:8080`.
-When the tunnel restarts (hostname changes), run `scripts/sync_meridian_rewrite.py --deploy` (or `start.sh`, which does it automatically).
+All platforms call **`https://securedviewvpn.com`** first (`ApiService.publicDomainUrl`), then fall back to `https://securedview-api.onrender.com` and (last resort) `https://meridianglobal.site`.
+Production is the full site + API on Render (custom domain → same FastAPI root). API stays under `/api`; marketing pages are public.
 
 ## Prerequisites
 

@@ -8,15 +8,22 @@ import 'package:http/io_client.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
-  /// Primary public host (Vercel rewrite → Render). Often RST/reset in CN.
-  static const publicTunnelUrl = 'https://meridianglobal.site';
+  /// Primary public host — custom domain on Render (Cloudflare-fronted, CN-OK).
+  static const publicDomainUrl = 'https://securedviewvpn.com';
 
-  /// Direct Render origin — works when Vercel is reset (mainland CN).
+  /// Direct Render origin — works if the custom domain has issues.
   static const renderOriginUrl = 'https://securedview-api.onrender.com';
 
+  /// Legacy Vercel rewrite — often RST/reset in mainland CN; last resort only.
+  static const publicTunnelUrl = 'https://meridianglobal.site';
+
   /// Ordered fallbacks. First success is sticky via SharedPreferences.
-  /// Render first: mainland CN resets Vercel every time; never burn a try there.
-  static const List<String> apiBases = [renderOriginUrl, publicTunnelUrl];
+  /// Custom domain first (CN-safe); never burn a try on Vercel from mainland CN.
+  static const List<String> apiBases = [
+    publicDomainUrl,
+    renderOriginUrl,
+    publicTunnelUrl,
+  ];
 
   static const String _basePrefKey = 'api_base_preferred';
 
@@ -39,7 +46,7 @@ class ApiService {
   late http.Client _httpClient;
   http.Client get httpClient => _httpClient;
 
-  String _preferredBase = renderOriginUrl;
+  String _preferredBase = apiBases.first;
 
   String get baseUrl => _preferredBase;
   String? get token => _token;

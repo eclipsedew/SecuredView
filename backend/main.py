@@ -48,6 +48,7 @@ print(f"API key loaded: {APP_API_KEY[:8]}...")
 ENVIRONMENT = os.getenv("ENVIRONMENT", "production")
 ALLOWED_ORIGINS = os.getenv(
     "ALLOWED_ORIGINS",
+    "https://securedviewvpn.com,https://www.securedviewvpn.com,"
     "https://meridianglobal.site,https://www.meridianglobal.site,"
     "http://localhost,http://localhost:8080",
 ).split(",")

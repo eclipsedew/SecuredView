@@ -1,5 +1,5 @@
 # Start local SecuredView backend (+ optional Cloudflare tunnel).
-# Production origin for meridianglobal.site is Render (permanent).
+# Production: securedviewvpn.com → Render (custom domain). Fallback: securedview-api.onrender.com.
 # SKIP_VERCEL_SYNC defaults to 1 so start.sh never rewrites the domain to a tunnel.
 set -u
 BACKEND_DIR="${BACKEND_DIR:-$HOME/WarpVPN/backend}"
@@ -56,7 +56,7 @@ if [ "${START_TUNNEL:-0}" = "1" ]; then
         python3 "$HOME/WarpVPN/scripts/sync_meridian_rewrite.py" --deploy || \
           echo "vercel rewrite sync failed (non-fatal)" >&2
       else
-        echo "SKIP_VERCEL_SYNC=1 — meridianglobal.site stays on Render"
+        echo "SKIP_VERCEL_SYNC=1 — meridianglobal.site stays optional; primary is securedviewvpn.com"
       fi
       exit 0
     fi
@@ -71,5 +71,5 @@ if [ "${START_TUNNEL:-0}" = "1" ]; then
   exit 1
 fi
 
-echo "backend only (START_TUNNEL=0). Production: meridianglobal.site → Render."
+echo "backend only (START_TUNNEL=0). Production: securedviewvpn.com → Render."
 exit 0

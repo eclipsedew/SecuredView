@@ -30,7 +30,7 @@ services:
         sync: false
       - key: ALLOWED_ORIGINS
         value: >-
-          https://meridianglobal.site,https://www.meridianglobal.site,http://localhost,http://localhost:8080
+          https://securedviewvpn.com,https://www.securedviewvpn.com,https://meridianglobal.site,https://www.meridianglobal.site,http://localhost,http://localhost:8080
       - key: DATABASE_URL
         fromDatabase:
           name: securedview-db
