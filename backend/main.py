@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.staticfiles import StaticFiles
 from slowapi.errors import RateLimitExceeded
-from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse
+from starlette.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 
 # Load .env file (local dev only — Render injects real env vars)
 _env_file = Path(__file__).parent / ".env"
@@ -189,6 +189,40 @@ def download_page():
 @limiter.exempt
 def site_index_alias():
     return _redirect("/")
+
+
+# ── Binary downloads (same host as the site — GitHub asset CDN is GFW-blocked) ──
+DOWNLOAD_DIR = STATIC_DIR / "downloads"
+DOWNLOAD_FILES = {
+    "app-release.apk": "application/vnd.android.package-archive",
+    "SecuredView-Windows.zip": "application/zip",
+    "SecuredView-Linux.tar.gz": "application/gzip",
+}
+
+
+@app.api_route("/dl/{filename}", methods=["GET", "HEAD"])
+@limiter.exempt
+def download_binary(filename: str):
+    """Serve release binaries from Render.
+
+    GitHub redirects assets to release-assets.githubusercontent.com
+    (Azure), which the GFW DNS-pollutes / RSTs from mainland China.
+    """
+    media = DOWNLOAD_FILES.get(filename)
+    if media is None:
+        return HTMLResponse("<h1>404 Not Found</h1>", status_code=404)
+    path = DOWNLOAD_DIR / filename
+    if not path.is_file():
+        return HTMLResponse("<h1>404 Not Found</h1>", status_code=404)
+    return FileResponse(
+        path,
+        media_type=media,
+        filename=filename,
+        headers={
+            "Cache-Control": "public, max-age=86400",
+            "Content-Disposition": f'attachment; filename="{filename}"',
+        },
+    )
 
 
 # Static site assets (css / img / js)

@@ -24,6 +24,10 @@ backend/.jwt_secret
 backend/.admin_creds
 backend/securevpn.db
 *.apk
+!backend/static/downloads/
+!backend/static/downloads/*.apk
+!backend/static/downloads/*.zip
+!backend/static/downloads/*.tar.gz
 *.aab
 *.exe
 !windows/bundled/usque.exe
@@ -49,3 +53,5 @@ backend/seed.json
 render_api_key
 .render_db_url
 backend/.paystack_plans.json
+
+
