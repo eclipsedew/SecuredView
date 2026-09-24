@@ -70,6 +70,22 @@ class MainActivity : FlutterActivity() {
                             )
                         }
                     }
+                    "wasConnected" -> {
+                        result.success(WarpVpnService.wasConnected(this))
+                    }
+                    "hasRunningTunnel" -> {
+                        // True only if the Go engine (or service StateFlow) still says up.
+                        val live = try {
+                            val s = Mobile.getStatus()
+                            s != null &&
+                                (s.contains("\"state\":\"connected\"") ||
+                                    s.contains("\"state\":\"reconnecting\""))
+                        } catch (_: Exception) {
+                            false
+                        }
+                        val svc = WarpVpnService.currentState()
+                        result.success(live || svc == "connected" || svc == "reconnecting")
+                    }
                     else -> result.notImplemented()
                 }
             }

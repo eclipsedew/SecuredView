@@ -71,6 +71,26 @@ class WarpService {
     return state == 'connected' || state == 'reconnecting';
   }
 
+  /// True if the native foreground service / Go engine still has a live tunnel.
+  /// Survives Flutter engine restarts (app swipe-away → reopen).
+  Future<bool> hasRunningTunnel() async {
+    try {
+      final up = await _channel.invokeMethod<bool>('hasRunningTunnel');
+      if (up != null) return up;
+    } catch (_) {}
+    return isConnected();
+  }
+
+  /// Last time the native side marked the tunnel up (for restore heuristics).
+  Future<bool> wasConnectedPreviously() async {
+    try {
+      final w = await _channel.invokeMethod<bool>('wasConnected');
+      return w == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<String> _rawState() async {
     try {
       final status = await _channel.invokeMethod<String>('getStatus');

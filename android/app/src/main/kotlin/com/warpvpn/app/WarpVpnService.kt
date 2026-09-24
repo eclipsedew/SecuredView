@@ -54,8 +54,18 @@ class WarpVpnService : VpnService() {
         when (intent?.action) {
             ACTION_START -> startTunnel()
             ACTION_STOP -> stopTunnel()
+            null -> {
+                // System restarted us after process death — revive tunnel if we
+                // were up (START_STICKY). Otherwise just die quietly.
+                if (wasConnected() && loadConfigJson() != null) {
+                    startTunnel()
+                } else {
+                    stopSelf()
+                }
+            }
         }
-        return START_NOT_STICKY
+        // Sticky: keep the tunnel alive when the UI process is swiped away.
+        return START_STICKY
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -127,15 +137,31 @@ class WarpVpnService : VpnService() {
             builder.addAddress(parsed.ipv6Address, 128)
         }
 
-        try {
-            builder.addRoute("0.0.0.0", 0)
-        } catch (e: Exception) {
-            Log.w(TAG, "addRoute IPv4 default failed: ${e.message}")
+        // Route only address families we actually have an address for.
+        // Routing ::/0 without a working IPv6 path either blackholes or
+        // (worse, if we skip the route) lets IPv6 leak around the tunnel.
+        if (parsed.enableIPv4 && parsed.ipv4Address != null) {
+            try {
+                builder.addRoute("0.0.0.0", 0)
+            } catch (e: Exception) {
+                Log.w(TAG, "addRoute IPv4 default failed: ${e.message}")
+            }
         }
-        try {
-            builder.addRoute("::", 0)
-        } catch (e: Exception) {
-            Log.w(TAG, "addRoute IPv6 default failed: ${e.message}")
+        val ipv6Up = parsed.enableIPv6 && parsed.ipv6Address != null
+        if (ipv6Up) {
+            try {
+                builder.addRoute("::", 0)
+            } catch (e: Exception) {
+                Log.w(TAG, "addRoute IPv6 default failed: ${e.message}")
+            }
+        } else {
+            // No IPv6 in the tunnel → block family so it cannot bypass TUN.
+            try {
+                // AF_INET = 2. java.net has no AF_INET; OsConstants is the Android API.
+                builder.allowFamily(android.system.OsConstants.AF_INET)
+            } catch (e: Exception) {
+                Log.w(TAG, "allowFamily(AF_INET) failed: ${e.message}")
+            }
         }
 
         for (dns in parsed.dnsServers) {
@@ -183,7 +209,10 @@ class WarpVpnService : VpnService() {
                 updateNotification()
                 if (state == "stopped" || state == "error") {
                     stopTrafficUpdates()
+                    markConnected(false)
                     stopSelf()
+                } else if (state == "connected") {
+                    markConnected(true)
                 }
             }
 
@@ -206,11 +235,13 @@ class WarpVpnService : VpnService() {
             stopSelf()
         } else {
             startTrafficUpdates()
+            markConnected(true)
         }
     }
 
     private fun stopTunnel() {
         _tunnelState.value = TunnelState.Stopped
+        markConnected(false)
         updateNotification()
         stopIfRunning(blocking = false)
         stopSelf()
@@ -240,6 +271,7 @@ class WarpVpnService : VpnService() {
             } catch (_: Exception) {}
         }
         _tunnelState.value = TunnelState.Stopped
+        markConnected(false)
     }
 
     private fun stopTunnelInternalAsync() {
@@ -409,6 +441,7 @@ class WarpVpnService : VpnService() {
         private const val STOP_TIMEOUT = 5_000L
         private const val PREFS_NAME = "warpvpn_masque"
         private const val KEY_CONFIG = "config_json"
+        private const val KEY_WAS_CONNECTED = "was_connected"
 
         const val ACTION_START = "com.warpvpn.START"
         const val ACTION_STOP = "com.warpvpn.STOP"
@@ -428,6 +461,23 @@ class WarpVpnService : VpnService() {
             context.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE)
                 .edit().putString(KEY_CONFIG, configJson).apply()
         }
+
+        fun markConnected(context: android.content.Context, up: Boolean) {
+            context.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE)
+                .edit().putBoolean(KEY_WAS_CONNECTED, up).apply()
+        }
+
+        private fun markConnected(up: Boolean) {
+            // Prefer live instance context; fall back is no-op if already gone.
+            instance?.let { markConnected(it, up) }
+        }
+
+        fun wasConnected(context: android.content.Context): Boolean {
+            return context.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE)
+                .getBoolean(KEY_WAS_CONNECTED, false)
+        }
+
+        private fun wasConnected(): Boolean = instance?.let { wasConnected(it) } ?: false
 
         fun currentState(): String {
             return when (_tunnelState.value) {

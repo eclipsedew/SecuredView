@@ -6,6 +6,9 @@ import '../app_version.dart';
 class SupportService {
   static const String email = kSupportEmail;
 
+  /// Opens a plain email to support (used by Contact Support).
+  static Future<bool> openSupport() => _open('mailto:$email');
+
   static Future<bool> reportBug({String? details}) async {
     final subject = Uri.encodeComponent('SecuredView VPN — Bug report');
     final body = Uri.encodeComponent(

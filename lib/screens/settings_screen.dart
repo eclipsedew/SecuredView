@@ -163,6 +163,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
         const SizedBox(height: 28),
 
+        // Support
+        _buildSectionLabel('Support'),
+        const SizedBox(height: 10),
+        _buildCard([
+          _actionTile(Icons.bug_report_outlined, 'Report a Bug', () {
+            SupportService.reportBug();
+          }),
+          const Divider(height: 1, color: AppTheme.line, indent: 0, endIndent: 0),
+          _actionTile(Icons.lightbulb_outline_rounded, 'Send a Suggestion', () {
+            SupportService.sendSuggestion();
+          }),
+          const Divider(height: 1, color: AppTheme.line, indent: 0, endIndent: 0),
+          _actionTile(Icons.mail_outline_rounded, 'Contact Support', () {
+            SupportService.openSupport();
+          }, subtitle: SupportService.email),
+        ]),
+
+        const SizedBox(height: 28),
+
         // About
         _buildSectionLabel('About'),
         const SizedBox(height: 10),
@@ -179,16 +198,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             _checkUpdates,
             isAccent: hasUpdate,
           ),
-          const Divider(height: 1, color: AppTheme.line, indent: 0, endIndent: 0),
-          _actionTile(Icons.bug_report_outlined, 'Report a Bug', () {
-            SupportService.reportBug();
-          }),
-          const Divider(height: 1, color: AppTheme.line, indent: 0, endIndent: 0),
-          _actionTile(Icons.lightbulb_outline_rounded, 'Send a Suggestion', () {
-            SupportService.sendSuggestion();
-          }),
-          const Divider(height: 1, color: AppTheme.line, indent: 0, endIndent: 0),
-          _infoTile(Icons.mail_outline_rounded, 'Support', SupportService.email),
           const Divider(height: 1, color: AppTheme.line, indent: 0, endIndent: 0),
           _actionTile(Icons.description_outlined, 'Terms of Service', () {
             Navigator.push(context, MaterialPageRoute(builder: (_) => const TOSScreen()));
@@ -361,13 +370,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
           Icon(icon, color: AppTheme.muted, size: 20),
           const SizedBox(width: 14),
           Expanded(child: Text(title, style: GoogleFonts.publicSans(fontWeight: FontWeight.w500, fontSize: 14, color: AppTheme.ink))),
-          Text(trailing, style: GoogleFonts.jetBrainsMono(color: AppTheme.muted, fontSize: 12)),
+          Flexible(
+            child: Text(
+              trailing,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.end,
+              style: GoogleFonts.jetBrainsMono(color: AppTheme.muted, fontSize: 12),
+            ),
+          ),
         ],
       ),
     );
   }
 
-  Widget _actionTile(IconData icon, String title, VoidCallback onTap, {bool isDestructive = false, bool isAccent = false}) {
+  Widget _actionTile(
+    IconData icon,
+    String title,
+    VoidCallback onTap, {
+    bool isDestructive = false,
+    bool isAccent = false,
+    String? subtitle,
+  }) {
     final color = isDestructive ? AppTheme.error : isAccent ? AppTheme.blue : AppTheme.muted;
     return InkWell(
       onTap: onTap,
@@ -378,13 +402,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
             Icon(icon, color: color, size: 20),
             const SizedBox(width: 14),
             Expanded(
-              child: Text(
-                title,
-                style: GoogleFonts.publicSans(
-                  fontWeight: FontWeight.w500,
-                  fontSize: 14,
-                  color: isDestructive ? AppTheme.error : AppTheme.ink,
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: GoogleFonts.publicSans(
+                      fontWeight: FontWeight.w500,
+                      fontSize: 14,
+                      color: isDestructive ? AppTheme.error : AppTheme.ink,
+                    ),
+                  ),
+                  if (subtitle != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.jetBrainsMono(
+                        color: AppTheme.muted,
+                        fontSize: 11,
+                        letterSpacing: 0.2,
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
             Icon(Icons.chevron_right_rounded, color: AppTheme.line2, size: 18),

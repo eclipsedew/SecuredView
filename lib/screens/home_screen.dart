@@ -127,6 +127,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         // Stats when connected
         if (isConnected) ...[
           StatsCard(stats: vpn.stats),
+          const SizedBox(height: 12),
+          _buildEgressCard(vpn),
           const SizedBox(height: 16),
         ],
 
@@ -550,6 +552,60 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 label,
                 style: GoogleFonts.archivo(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600),
               ),
+      ),
+    );
+  }
+
+  Widget _buildEgressCard(VPNService vpn) {
+    final ip = vpn.egressIp;
+    final checking = vpn.egressChecking;
+    return Container(
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        border: Border.all(color: AppTheme.line2),
+        borderRadius: BorderRadius.circular(3),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                'EXIT IP',
+                style: GoogleFonts.jetBrainsMono(
+                  color: AppTheme.muted,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w500,
+                  letterSpacing: 1.5,
+                ),
+              ),
+            ),
+            if (checking && ip == null)
+              const SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.blue),
+              )
+            else
+              Text(
+                ip ?? '—',
+                style: GoogleFonts.jetBrainsMono(
+                  color: ip != null ? AppTheme.signal : AppTheme.muted,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              ),
+            const SizedBox(width: 10),
+            GestureDetector(
+              onTap: () {
+                // Force re-check so the user can prove masking on demand.
+                vpn.refreshEgressIp();
+              },
+              child: Icon(Icons.refresh_rounded, color: AppTheme.muted, size: 16),
+            ),
+          ],
+        ),
       ),
     );
   }

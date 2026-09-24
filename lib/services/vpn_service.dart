@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import '../models/vpn_models.dart';
 import 'account_service.dart';
 import 'api_service.dart';
@@ -15,6 +16,9 @@ class VPNService extends ChangeNotifier {
   bool _usingUsque = false;
 
   VPNState _state = VPNState.disconnected;
+  bool _restored = false;
+  String? _egressIp;
+  bool _egressChecking = false;
 
   /// Parse warp-cli status output to get the exact status word.
   static String _parseWarpStatus(String output) {
@@ -36,6 +40,7 @@ class VPNService extends ChangeNotifier {
   Timer? _entitlementSyncTimer;
   bool _entitlementCutting = false;
   bool _verifyInFlight = false;
+  bool _restoreInFlight = false;
 
   // ── Server-authoritative entitlement ──────────────────────────────
   // Device wall-clock is NOT trusted (users can set date/time).
@@ -62,6 +67,8 @@ class VPNService extends ChangeNotifier {
   ServerConfig? get currentServer => _currentServer;
   ConnectionStats get stats => _stats;
   List<ServerConfig> get allServers => _servers;
+  String? get egressIp => _egressIp;
+  bool get egressChecking => _egressChecking;
 
   /// All 13 locations require an active trial or paid plan.
   List<ServerConfig> get availableServers {
@@ -82,10 +89,82 @@ class VPNService extends ChangeNotifier {
     _initServersFallback();
     _currentServer = _servers.isNotEmpty ? _servers.first : null;
     _loadSettings();
+    // Adopt native tunnel state after the channel is up (app cold start).
+    Future.delayed(const Duration(milliseconds: 400), restoreFromNative);
+  }
+
+  /// Sync UI with the native VpnService / Go engine after process restart.
+  /// Without this, swipe-away → reopen always shows DISCONNECTED even if
+  /// the sticky foreground service is still masking traffic.
+  Future<void> restoreFromNative() async {
+    if (_restored || _restoreInFlight || kIsWeb) return;
+    if (!(Platform.isAndroid || Platform.isIOS)) {
+      // Desktop: usque process may outlive the Flutter engine (Windows).
+      if (Platform.isWindows && _usque.isConnected()) {
+        _adoptConnected();
+      }
+      _restored = true;
+      return;
+    }
+    _restoreInFlight = true;
+    try {
+      final up = await _warp.hasRunningTunnel().timeout(
+        const Duration(seconds: 3),
+        onTimeout: () => false,
+      );
+      if (up) {
+        _adoptConnected();
+        _restored = true;
+        return;
+      }
+      // Tunnel is down. If we (or the service) thought we were up, treat as
+      // a drop — kill-switch monitor will revive if still entitled.
+      final wanted = await _warp.wasConnectedPreviously().timeout(
+        const Duration(seconds: 2),
+        onTimeout: () => false,
+      );
+      _restored = true;
+      if (wanted && _state == VPNState.disconnected) {
+        // Leave state disconnected; kick kill-switch so a live entitlement
+        // brings the tunnel back without the user tapping Connect.
+        _startKillSwitchMonitor();
+        // One immediate revive attempt (kill-switch waits for isConnected).
+        unawaited(_tryReviveAfterDrop());
+      }
+    } catch (_) {
+      _restored = true;
+    } finally {
+      _restoreInFlight = false;
+    }
+  }
+
+  void _adoptConnected() {
+    _state = VPNState.connected;
+    _connectedAt ??= DateTime.now();
+    _sessionHadServerEntitlement = true;
+    _startTimers();
+    _startKillSwitchMonitor();
+    _startEntitlementWatch();
+    unawaited(_refreshEgressIp());
+    notifyListeners();
+  }
+
+  Future<void> _tryReviveAfterDrop() async {
+    if (_isConnecting || isConnected) return;
+    if (_accountService == null || !_accountService!.hasAccount) return;
+    if (!_killSwitch && !_autoConnect) return;
+    final ok = await _verifyEntitlementWithServer();
+    if (!ok || !_serverEntitlementLive()) return;
+    if (_isConnecting || isConnected) return;
+    await connect();
   }
 
   void updateAccount(AccountService accountService) {
     _accountService = accountService;
+    // First time we have an account after cold start — finish native restore.
+    if (!_restored) {
+      unawaited(restoreFromNative());
+    }
 
     if (!_accountService!.hasAccount) {
       if (isConnected || isConnecting) {
@@ -399,6 +478,7 @@ class VPNService extends ChangeNotifier {
       _startKillSwitchMonitor();
       _startEntitlementWatch();
       unawaited(_enforceEntitlement(localOnly: false));
+      unawaited(_refreshEgressIp());
       notifyListeners();
     } catch (e) {
       _state = VPNState.error;
@@ -439,6 +519,7 @@ class VPNService extends ChangeNotifier {
       _state = VPNState.disconnected;
       _connectedAt = null;
       _stats = const ConnectionStats();
+      _egressIp = null;
       notifyListeners();
     } catch (e) {
       _state = VPNState.error;
@@ -586,27 +667,72 @@ class VPNService extends ChangeNotifier {
     }
 
     _killSwitchMonitor = Timer.periodic(const Duration(seconds: 5), (_) async {
-      if (!isConnected || kIsWeb) return;
+      if (kIsWeb) return;
 
-      // Entitlement cut → never keep or revive the tunnel
-      if (_sessionHadServerEntitlement && !_serverEntitlementLive()) {
-        await _cutTunnel('Trial or subscription ended. Disconnected.');
-        return;
-      }
-      if (!(_accountService?.isPremiumActive ?? false)) {
-        await _cutTunnel('Trial or subscription required. Disconnected.');
-        return;
-      }
+      // UI thinks connected — verify native still is; revive/cut as needed.
+      if (isConnected) {
+        // Entitlement cut → never keep or revive the tunnel
+        if (_sessionHadServerEntitlement && !_serverEntitlementLive()) {
+          await _cutTunnel('Trial or subscription ended. Disconnected.');
+          return;
+        }
+        if (!(_accountService?.isPremiumActive ?? false)) {
+          await _cutTunnel('Trial or subscription required. Disconnected.');
+          return;
+        }
 
-      if (_lastConnectTime != null) {
-        final elapsed = DateTime.now().difference(_lastConnectTime!);
-        if (elapsed < const Duration(seconds: 15)) return;
-      }
+        if (_lastConnectTime != null) {
+          final elapsed = DateTime.now().difference(_lastConnectTime!);
+          if (elapsed < const Duration(seconds: 15)) return;
+        }
 
-      try {
-        if (Platform.isAndroid || Platform.isIOS) {
-          final up = await _warp.isConnected();
-          if (!up && !_isConnecting) {
+        try {
+          if (Platform.isAndroid || Platform.isIOS) {
+            final up = await _warp.isConnected();
+            if (!up && !_isConnecting) {
+              if (_killSwitch) {
+                final ok = await _verifyEntitlementWithServer();
+                if (!ok || !_serverEntitlementLive()) {
+                  await _cutTunnel('Trial or subscription ended. Disconnected.');
+                  return;
+                }
+                _state = VPNState.connecting;
+                notifyListeners();
+                try {
+                  await _connectMobile();
+                  _state = VPNState.connected;
+                  _connectedAt = DateTime.now();
+                  _stats = const ConnectionStats();
+                  unawaited(_refreshEgressIp());
+                  notifyListeners();
+                } catch (_) {
+                  _state = VPNState.disconnected;
+                  _error = 'Connection lost. Kill switch active.';
+                  _stopTimers();
+                  notifyListeners();
+                }
+              } else {
+                _state = VPNState.disconnected;
+                _connectedAt = null;
+                _stats = const ConnectionStats();
+                _stopTimers();
+                notifyListeners();
+              }
+            }
+            return;
+          }
+          if (Platform.isLinux || Platform.isWindows || Platform.isMacOS) {
+            bool tunnelUp;
+            if (_usingUsque) {
+              tunnelUp = _usque.isConnected();
+            } else {
+              if (!_warpCliPresent()) return;
+              final result = await Process.run('warp-cli', ['--accept-tos', 'status']);
+              final status = _parseWarpStatus(result.stdout.toString());
+              tunnelUp = status != 'disconnected';
+            }
+            if (tunnelUp || _isConnecting) return;
+
             if (_killSwitch) {
               final ok = await _verifyEntitlementWithServer();
               if (!ok || !_serverEntitlementLive()) {
@@ -616,7 +742,7 @@ class VPNService extends ChangeNotifier {
               _state = VPNState.connecting;
               notifyListeners();
               try {
-                await _connectMobile();
+                await _connectDesktop();
                 _state = VPNState.connected;
                 _connectedAt = DateTime.now();
                 _stats = const ConnectionStats();
@@ -635,51 +761,48 @@ class VPNService extends ChangeNotifier {
               notifyListeners();
             }
           }
-          return;
+        } catch (_) {
+          // Monitor error — ignore
         }
-        if (Platform.isLinux || Platform.isWindows || Platform.isMacOS) {
-          bool tunnelUp;
-          if (_usingUsque) {
-            tunnelUp = _usque.isConnected();
-          } else {
-            if (!_warpCliPresent()) return;
-            final result = await Process.run('warp-cli', ['--accept-tos', 'status']);
-            final status = _parseWarpStatus(result.stdout.toString());
-            tunnelUp = status != 'disconnected';
-          }
-          if (tunnelUp || _isConnecting) return;
-
-          if (_killSwitch) {
-            final ok = await _verifyEntitlementWithServer();
-            if (!ok || !_serverEntitlementLive()) {
-              await _cutTunnel('Trial or subscription ended. Disconnected.');
-              return;
-            }
-            _state = VPNState.connecting;
-            notifyListeners();
-            try {
-              await _connectDesktop();
-              _state = VPNState.connected;
-              _connectedAt = DateTime.now();
-              _stats = const ConnectionStats();
-              notifyListeners();
-            } catch (_) {
-              _state = VPNState.disconnected;
-              _error = 'Connection lost. Kill switch active.';
-              _stopTimers();
-              notifyListeners();
-            }
-          } else {
-            _state = VPNState.disconnected;
-            _connectedAt = null;
-            _stats = const ConnectionStats();
-            _stopTimers();
-            notifyListeners();
-          }
-        }
-      } catch (_) {
-        // Monitor error — ignore
+        return;
       }
+
+      // UI is disconnected but we previously wanted a tunnel (process death /
+      // swipe-away). Keep trying to revive while still entitled.
+      if (!_killSwitch && !_autoConnect) return;
+      if (_isConnecting || isDisconnecting) return;
+      if (_accountService == null || !_accountService!.hasAccount) return;
+      if (!(_accountService?.isPremiumActive ?? false)) return;
+      // Don't fight an intentional disconnect: only revive shortly after a drop.
+      // wasConnected flag is cleared on explicit disconnect via native STOP.
+      try {
+        final wanted = await _warp.wasConnectedPreviously();
+        if (!wanted) return;
+        final ok = await _verifyEntitlementWithServer();
+        if (!ok || !_serverEntitlementLive()) return;
+        if (_isConnecting || isConnected) return;
+        _state = VPNState.connecting;
+        _error = null;
+        notifyListeners();
+        try {
+          if (Platform.isAndroid || Platform.isIOS) {
+            await _connectMobile();
+          } else {
+            await _connectDesktop();
+          }
+          _state = VPNState.connected;
+          _connectedAt = DateTime.now();
+          _stats = const ConnectionStats();
+          _startTimers();
+          _startEntitlementWatch();
+          unawaited(_refreshEgressIp());
+          notifyListeners();
+        } catch (_) {
+          _state = VPNState.disconnected;
+          _stopTimers();
+          notifyListeners();
+        }
+      } catch (_) {}
     });
   }
 
@@ -690,7 +813,104 @@ class VPNService extends ChangeNotifier {
 
   void _startTimers() {
     _statsTimer = Timer.periodic(const Duration(seconds: 1), (_) => _updateStats());
-    _durationTimer = Timer.periodic(const Duration(seconds: 1), (_) => notifyListeners());
+    _durationTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      // Re-check native tunnel every second while UI claims connected —
+      // catches service death that the 5s kill-switch tick would miss.
+      unawaited(_assertNativeStillUp());
+      notifyListeners();
+    });
+  }
+
+  Future<void> _assertNativeStillUp() async {
+    if (!isConnected || kIsWeb || _isConnecting) return;
+    if (!(Platform.isAndroid || Platform.isIOS)) return;
+    // Grace period right after connect.
+    if (_lastConnectTime != null &&
+        DateTime.now().difference(_lastConnectTime!) < const Duration(seconds: 8)) {
+      return;
+    }
+    try {
+      final up = await _warp.hasRunningTunnel().timeout(
+        const Duration(seconds: 2),
+        onTimeout: () => true, // don't flap on a slow channel
+      );
+      if (!up && isConnected && !_isConnecting) {
+        if (_killSwitch) {
+          // Kill-switch monitor will revive; surface honest state first.
+          _state = VPNState.disconnected;
+          _connectedAt = null;
+          _stats = const ConnectionStats();
+          _egressIp = null;
+          _stopTimers();
+          notifyListeners();
+          unawaited(_tryReviveAfterDrop());
+        } else {
+          _state = VPNState.disconnected;
+          _connectedAt = null;
+          _stats = const ConnectionStats();
+          _egressIp = null;
+          _stopTimers();
+          _stopKillSwitchMonitor();
+          _stopEntitlementWatch();
+          _error = 'Connection lost.';
+          notifyListeners();
+        }
+      }
+    } catch (_) {}
+  }
+
+  /// Fetch the public egress IP through whatever path the device is using.
+  /// Called after connect so the UI can prove masking (and catch leaks).
+  Future<void> refreshEgressIp() => _refreshEgressIp();
+
+  Future<void> _refreshEgressIp() async {
+    if (_egressChecking) return;
+    _egressChecking = true;
+    notifyListeners();
+    try {
+      final ip = await fetchEgressIp().timeout(const Duration(seconds: 8));
+      _egressIp = ip;
+      notifyListeners();
+    } catch (_) {
+      // Leave previous value; IP check is best-effort.
+    } finally {
+      _egressChecking = false;
+      notifyListeners();
+    }
+  }
+
+  /// Public IP as seen by a remote host (goes through the tunnel when up).
+  static Future<String> fetchEgressIp() async {
+    // Cloudflare trace is small, CN-reachable, and returns `ip=` + `warp=`.
+    final client = http.Client();
+    try {
+      final resp = await client
+          .get(Uri.parse('https://www.cloudflare.com/cdn-cgi/trace'))
+          .timeout(const Duration(seconds: 6));
+      if (resp.statusCode == 200) {
+        for (final line in resp.body.split('\n')) {
+          if (line.startsWith('ip=')) {
+            final ip = line.substring(3).trim();
+            if (ip.isNotEmpty) return ip;
+          }
+        }
+      }
+    } finally {
+      client.close();
+    }
+    // Fallback
+    final client2 = http.Client();
+    try {
+      final resp = await client2
+          .get(Uri.parse('https://api.ipify.org?format=text'))
+          .timeout(const Duration(seconds: 6));
+      if (resp.statusCode == 200 && resp.body.trim().isNotEmpty) {
+        return resp.body.trim();
+      }
+    } finally {
+      client2.close();
+    }
+    throw Exception('Could not determine egress IP');
   }
 
   void _stopTimers() {
@@ -702,17 +922,36 @@ class VPNService extends ChangeNotifier {
 
   void _updateStats() {
     if (!isConnected) return;
-    final rng = DateTime.now().microsecondsSinceEpoch;
-    final uploadSpeed = 1024 + (rng % 8192);
-    final downloadSpeed = 4096 + (rng % 32768);
+    // Prefer real byte counters from the native engine when available.
+    unawaited(_pullNativeStats());
+    final connectedDuration = _connectedAt != null
+        ? DateTime.now().difference(_connectedAt!)
+        : Duration.zero;
     _stats = ConnectionStats(
-      bytesSent: _stats.bytesSent + uploadSpeed,
-      bytesReceived: _stats.bytesReceived + downloadSpeed,
-      connectedDuration: _connectedAt != null
-          ? DateTime.now().difference(_connectedAt!)
-          : Duration.zero,
+      bytesSent: _stats.bytesSent,
+      bytesReceived: _stats.bytesReceived,
+      connectedDuration: connectedDuration,
     );
     notifyListeners();
+  }
+
+  Future<void> _pullNativeStats() async {
+    if (!(Platform.isAndroid || Platform.isIOS)) return;
+    try {
+      final st = await _warp.status().timeout(const Duration(seconds: 1));
+      if (st == null) return;
+      final sent = (st['bytes_sent'] as num?)?.toInt();
+      final recv = (st['bytes_recv'] as num?)?.toInt();
+      if (sent != null && recv != null && (sent > 0 || recv > 0)) {
+        _stats = ConnectionStats(
+          bytesSent: sent,
+          bytesReceived: recv,
+          connectedDuration: _connectedAt != null
+              ? DateTime.now().difference(_connectedAt!)
+              : Duration.zero,
+        );
+      }
+    } catch (_) {}
   }
 
   void selectServer(ServerConfig server) {

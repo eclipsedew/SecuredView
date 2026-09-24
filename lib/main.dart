@@ -54,7 +54,12 @@ class _SecuredViewAppState extends State<SecuredViewApp> with WidgetsBindingObse
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      // Returning from background: refresh server truth, then cut if ended
+      // Returning from background: re-adopt native tunnel state first
+      // (service may have died or still be up), then refresh server truth.
+      try {
+        final vpn = context.read<VPNService>();
+        vpn.restoreFromNative();
+      } catch (_) {}
       _enforceFromRoot(syncServer: true);
     } else if (state == AppLifecycleState.paused) {
       // Still enforce local clock while backgrounded via residual timer
