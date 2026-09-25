@@ -230,6 +230,16 @@ def llms_txt():
     return _static_text("llms.txt")
 
 
+# Bing Webmaster Tools "XML File" ownership check — file downloaded from Bing,
+# must be served from the exact path /BingSiteAuth.xml at the site root.
+@app.api_route("/BingSiteAuth.xml", methods=["GET", "HEAD"])
+@limiter.exempt
+def bing_site_auth():
+    return Response(
+        content=_static_text("BingSiteAuth.xml"), media_type="application/xml"
+    )
+
+
 @app.api_route(
     "/.well-known/indexnow-key.txt", methods=["GET", "HEAD"], response_class=PlainTextResponse
 )
