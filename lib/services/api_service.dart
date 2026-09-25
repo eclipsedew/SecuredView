@@ -83,8 +83,9 @@ class ApiService {
   }
 
   /// Single choke point: multi-host failover + short per-try timeout.
-  /// Any HTTP status from the server counts as success (endpoint reachable);
-  /// only transport errors (RST, DNS, timeout) fall through to the next host.
+  /// Transport errors (RST, DNS, timeout) and 5xx responses fall through to
+  /// the next host — a 502 mid-deploy on one base must not fail the request
+  /// when another base is healthy. Any other HTTP status is the real answer.
   Future<http.Response> send(
     String method,
     String path, {
@@ -94,6 +95,7 @@ class ApiService {
     int rounds = 2,
   }) async {
     Object? lastError;
+    http.Response? lastResp;
     for (var round = 0; round < rounds; round++) {
       for (final base in _orderedBases()) {
         try {
@@ -106,8 +108,13 @@ class ApiService {
           final streamed = await _httpClient.send(req).timeout(timeout);
           final resp = await http.Response.fromStream(streamed)
               .timeout(const Duration(seconds: 8));
-          await _stickTo(base);
-          return resp;
+          if (resp.statusCode < 500) {
+            await _stickTo(base);
+            return resp;
+          }
+          // 5xx: this host is down/restarting — try the next base.
+          lastResp = resp;
+          lastError = null;
         } catch (e) {
           lastError = e;
           // next host immediately (RST is usually <1s)
@@ -116,6 +123,10 @@ class ApiService {
       if (round == 0) {
         await Future<void>.delayed(const Duration(milliseconds: 400));
       }
+    }
+    if (lastResp != null) {
+      // Every reachable host returned 5xx — surface the real status.
+      return lastResp;
     }
     if (lastError is TimeoutException) {
       throw ApiException('Network timeout. Check your connection and retry.',

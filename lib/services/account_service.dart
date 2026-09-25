@@ -168,6 +168,8 @@ class AccountService extends ChangeNotifier {
         _error = 'Too many attempts. Please wait a few minutes and try again.';
       } else if (e.statusCode == 401) {
         _error = 'Invalid Account ID or PIN';
+      } else if (e.statusCode != null && e.statusCode! >= 500) {
+        _error = 'Server is restarting. Try again in a few seconds.';
       } else {
         _error = e.message.isNotEmpty
             ? e.message
