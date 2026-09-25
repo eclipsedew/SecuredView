@@ -169,7 +169,9 @@ class AccountService extends ChangeNotifier {
       } else if (e.statusCode == 401) {
         _error = 'Invalid Account ID or PIN';
       } else {
-        _error = 'Login failed. Check your connection.';
+        _error = e.message.isNotEmpty
+            ? e.message
+            : 'Login failed. Check your connection.';
       }
       notifyListeners();
       return false;

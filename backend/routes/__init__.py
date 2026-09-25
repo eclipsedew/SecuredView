@@ -41,6 +41,8 @@ def _generate_device_name():
 
 
 def _max_devices(account: Account) -> int:
+    if account.is_admin:
+        return 999  # the admin's own devices are never capped
     if account.is_premium and account.premium_expires_at:
         exp = account.premium_expires_at
         if exp.tzinfo is None:

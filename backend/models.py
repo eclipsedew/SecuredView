@@ -1,4 +1,5 @@
 """SQLAlchemy database models."""
+import os
 import uuid
 import secrets
 from datetime import datetime, timezone
@@ -145,8 +146,13 @@ SPECIAL_TRIAL_DAYS = 15
 ACCOUNT_TYPES = ("normal", "premium", "special", "legacy", "admin")
 
 # Seeded admin app account — logs in via the normal app login screen and
-# gets the admin UI instead of the user UI. No reset path (embedded in DB).
-ADMIN_ACCOUNT_ID = "0595184915"
-ADMIN_ACCOUNT_PIN = "1774"
+# gets the admin UI instead of the user UI.
+# PINs live ONLY in Render env vars (this repo is public — never commit them).
+# Recovery path: Render dashboard → service env vars, plus an optional second
+# "recovery admin" (ALT) so one forgotten ID can never lock you out.
+ADMIN_ACCOUNT_ID = os.getenv("SECUREVPN_ADMIN_ID", "0595184915")
+ADMIN_ACCOUNT_PIN = os.getenv("SECUREVPN_ADMIN_PIN") or None
+ADMIN_ALT_ACCOUNT_ID = os.getenv("SECUREVPN_ADMIN_ALT_ID") or None
+ADMIN_ALT_ACCOUNT_PIN = os.getenv("SECUREVPN_ADMIN_ALT_PIN") or None
 # Max new trial claims per IP per rolling day (device key is the hard limit)
 TRIAL_IP_PER_DAY = 3

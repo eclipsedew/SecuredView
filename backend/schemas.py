@@ -97,10 +97,11 @@ class AccountLogin(BaseModel):
     @field_validator("account_id")
     @classmethod
     def account_id_hex(cls, v):
-        from models import ADMIN_ACCOUNT_ID
+        from models import ADMIN_ACCOUNT_ID, ADMIN_ALT_ACCOUNT_ID
         v = v.strip().upper()
-        # Normal IDs: 16-char uppercase hex. Seeded admin ID: exact match.
-        if v == ADMIN_ACCOUNT_ID:
+        # Normal IDs: 16-char uppercase hex. Seeded admin IDs: exact match
+        # (primary + optional recovery admin).
+        if v == ADMIN_ACCOUNT_ID or (ADMIN_ALT_ACCOUNT_ID and v == ADMIN_ALT_ACCOUNT_ID):
             return v
         if not re.fullmatch(r"[A-F0-9]{16}", v):
             raise ValueError("Invalid account ID format")

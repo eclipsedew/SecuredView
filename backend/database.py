@@ -113,37 +113,64 @@ def migrate_schema():
 
 
 def init_db():
-    """Create all tables + additive migrations + seed the admin account."""
+    """Create all tables + additive migrations + seed the admin account(s)."""
     from models import (  # noqa
         Account, Device, Server, Subscription, TrialClaim,
         ADMIN_ACCOUNT_ID, ADMIN_ACCOUNT_PIN,
+        ADMIN_ALT_ACCOUNT_ID, ADMIN_ALT_ACCOUNT_PIN,
     )
     Base.metadata.create_all(bind=engine)
     migrate_schema()
     seed_admin(ADMIN_ACCOUNT_ID, ADMIN_ACCOUNT_PIN)
+    if ADMIN_ALT_ACCOUNT_ID and ADMIN_ALT_ACCOUNT_PIN:
+        seed_admin(ADMIN_ALT_ACCOUNT_ID, ADMIN_ALT_ACCOUNT_PIN)
 
 
-def seed_admin(account_id: str, pin: str) -> None:
-    """Seed the single admin app account. Never overwrites an existing row —
-    once created there is no reset path (by design)."""
+def seed_admin(account_id: str, pin) -> None:
+    """Create or sync an admin account from env-configured credentials.
+
+    - pin None (SECUREVPN_*_PIN not set) → nothing happens; an existing row
+      keeps working, so an unset env can never lock you out.
+    - row missing → create it (admin, unlimited premium until 2099).
+    - row exists + pin set → rotate pin_hash when it no longer verifies.
+      The env var is the ONLY reset path; the app has no reset flow.
+    """
+    if not pin:
+        print(f"admin seed skipped ({account_id}): no pin in env")
+        return
     from models import Account  # noqa
-    from auth import hash_pin  # lazy: auth imports this module
+    from auth import hash_pin, verify_pin  # lazy: auth imports this module
     from datetime import datetime, timezone
     db = SessionLocal()
     try:
-        if db.query(Account).filter(Account.id == account_id).first():
+        acct = db.query(Account).filter(Account.id == account_id).first()
+        if acct is None:
+            db.add(Account(
+                id=account_id,
+                pin_hash=hash_pin(pin),
+                display_name="Admin",
+                is_admin=True,
+                account_type="admin",
+                is_premium=True,
+                premium_expires_at=datetime(2099, 12, 31, tzinfo=timezone.utc),
+            ))
+            db.commit()
+            print(f"seeded admin account {account_id}")
             return
-        db.add(Account(
-            id=account_id,
-            pin_hash=hash_pin(pin),
-            display_name="Admin",
-            is_admin=True,
-            account_type="admin",
-            is_premium=True,
-            premium_expires_at=datetime(2099, 12, 31, tzinfo=timezone.utc),
-        ))
-        db.commit()
-        print(f"seeded admin account {account_id}")
+        changed = False
+        if not verify_pin(pin, acct.pin_hash):
+            acct.pin_hash = hash_pin(pin)
+            changed = True
+        if not acct.is_admin:
+            acct.is_admin = True
+            changed = True
+        if not acct.is_premium:
+            acct.is_premium = True
+            acct.premium_expires_at = datetime(2099, 12, 31, tzinfo=timezone.utc)
+            changed = True
+        if changed:
+            db.commit()
+            print(f"synced admin account {account_id}")
     finally:
         db.close()
 
