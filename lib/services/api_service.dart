@@ -301,6 +301,7 @@ class ApiService {
     return LoginResult(
       accountId: data['account_id'].toString().toUpperCase(),
       isPremium: data['is_premium'] ?? false,
+      isAdmin: data['is_admin'] ?? false,
     );
   }
 
@@ -308,6 +309,45 @@ class ApiService {
     final resp = await get('/api/accounts/me');
     final data = await _handleResponse(resp);
     return AccountInfo.fromJson(data);
+  }
+
+  // ── Admin dashboard API (admin account token only) ──────
+  Future<List<AccountInfo>> adminListAccounts() async {
+    final resp = await get('/api/admin/accounts');
+    final list = await _handleListResponse(resp);
+    return list
+        .map((e) => AccountInfo.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<Map<String, dynamic>> adminCreateAccount({
+    required String accountType,
+    String? pin,
+    String? displayName,
+    int? days,
+  }) async {
+    final resp = await post('/api/admin/accounts', body: {
+      'account_type': accountType,
+      if (pin != null && pin.isNotEmpty) 'pin': pin,
+      if (displayName != null && displayName.isNotEmpty)
+        'display_name': displayName,
+      if (days != null) 'days': days,
+    });
+    return _handleResponse(resp);
+  }
+
+  Future<Map<String, dynamic>> adminGrantPremium(
+      String accountId, {int? days}) async {
+    final resp = await post(
+      '/api/admin/accounts/$accountId/premium',
+      body: days != null ? {'days': days} : <String, dynamic>{},
+    );
+    return _handleResponse(resp);
+  }
+
+  Future<void> adminDeleteAccount(String accountId) async {
+    final resp = await delete('/api/admin/accounts/$accountId');
+    await _handleResponse(resp);
   }
 
   // Servers
@@ -403,11 +443,13 @@ class LoginResult {
   final bool isPremium;
   final bool isTrial;
   final DateTime? trialEndsAt;
+  final bool isAdmin;
   LoginResult({
     required this.accountId,
     required this.isPremium,
     this.isTrial = false,
     this.trialEndsAt,
+    this.isAdmin = false,
   });
 }
 
@@ -421,6 +463,8 @@ class AccountInfo {
   final DateTime createdAt;
   final bool isTrial;
   final DateTime? trialEndsAt;
+  final bool isAdmin;
+  final String accountType;
 
   AccountInfo({
     required this.id,
@@ -432,6 +476,8 @@ class AccountInfo {
     required this.createdAt,
     this.isTrial = false,
     this.trialEndsAt,
+    this.isAdmin = false,
+    this.accountType = 'normal',
   });
 
   factory AccountInfo.fromJson(Map<String, dynamic> json) => AccountInfo(
@@ -450,6 +496,8 @@ class AccountInfo {
         trialEndsAt: json['trial_ends_at'] != null
             ? DateTime.tryParse(json['trial_ends_at'])
             : null,
+        isAdmin: json['is_admin'] ?? false,
+        accountType: json['account_type'] ?? 'normal',
       );
 }
 

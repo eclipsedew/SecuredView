@@ -177,6 +177,7 @@ class UserAccount {
   final int deviceCount;
   final bool isTrial;
   final DateTime? trialEndsAt;
+  final bool isAdmin;
 
   const UserAccount({
     required this.accountId,
@@ -187,6 +188,7 @@ class UserAccount {
     this.deviceCount = 0,
     this.isTrial = false,
     this.trialEndsAt,
+    this.isAdmin = false,
   });
 
   bool get isPremiumActive {
@@ -211,6 +213,7 @@ class UserAccount {
     'deviceCount': deviceCount,
     'isTrial': isTrial,
     'trialEndsAt': trialEndsAt?.toIso8601String(),
+    'isAdmin': isAdmin,
   };
 
   factory UserAccount.fromJson(Map<String, dynamic> json) => UserAccount(
@@ -231,5 +234,6 @@ class UserAccount {
     trialEndsAt: json['trialEndsAt'] != null
         ? DateTime.tryParse(json['trialEndsAt'])
         : null,
+    isAdmin: json['isAdmin'] ?? false,
   );
 }

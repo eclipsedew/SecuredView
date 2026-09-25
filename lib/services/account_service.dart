@@ -24,6 +24,7 @@ class AccountService extends ChangeNotifier {
   DateTime? get entitlementEndsAt =>
       _account?.premiumExpiry ?? _account?.trialEndsAt;
   bool get pinSetupComplete => _pinSetupComplete;
+  bool get isAdmin => _account?.isAdmin ?? false;
   String? get error => _error;
 
   AccountService({ApiService? api}) : _api = api ?? ApiService();
@@ -47,6 +48,7 @@ class AccountService extends ChangeNotifier {
           createdAt: info.createdAt,
           isTrial: info.isTrial,
           trialEndsAt: info.trialEndsAt,
+          isAdmin: info.isAdmin,
         );
         await _saveAccountLocal(prefs);
         _error = null;
@@ -152,6 +154,7 @@ class AccountService extends ChangeNotifier {
         createdAt: DateTime.now(),
         isTrial: result.isTrial,
         trialEndsAt: result.trialEndsAt,
+        isAdmin: result.isAdmin,
       );
       _error = null;
       final prefs = await SharedPreferences.getInstance();
@@ -241,6 +244,7 @@ extension UserAccountCopyWith on UserAccount {
     int? deviceCount,
     bool? isTrial,
     DateTime? trialEndsAt,
+    bool? isAdmin,
   }) {
     return UserAccount(
       accountId: accountId ?? this.accountId,
@@ -251,6 +255,7 @@ extension UserAccountCopyWith on UserAccount {
       deviceCount: deviceCount ?? this.deviceCount,
       isTrial: isTrial ?? this.isTrial,
       trialEndsAt: trialEndsAt ?? this.trialEndsAt,
+      isAdmin: isAdmin ?? this.isAdmin,
     );
   }
 }

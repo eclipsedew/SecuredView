@@ -12,6 +12,7 @@ import '../widgets/stats_card.dart';
 import 'servers_screen.dart';
 import 'settings_screen.dart';
 import 'premium_screen.dart';
+import 'admin_dashboard_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -52,6 +53,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   Widget build(BuildContext context) {
     final vpn = context.watch<VPNService>();
     final account = context.watch<AccountService>();
+
+    // Admin account → in-app admin dashboard instead of any user UI.
+    if (account.isAdmin) {
+      return const AdminDashboardScreen();
+    }
 
     // Listen for errors and show snackbar
     if (vpn.error != null && mounted) {
@@ -832,8 +838,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         if (!mounted) return;
                         if (success) {
                           nav.pop();
-                          _animateConnect();
-                          vpnService.connect();
+                          // Admin lands on the admin dashboard — no auto-connect.
+                          if (!accountService.isAdmin) {
+                            _animateConnect();
+                            vpnService.connect();
+                          }
                         } else {
                           final errorMsg = accountService.error ?? (isLogin ? 'Invalid Account ID or PIN' : 'Failed to create account');
                           setSheetState(() { loading = false; localError = errorMsg; });
