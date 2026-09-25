@@ -70,6 +70,7 @@ _ACCOUNT_EXTRA_COLUMNS = [
     ("device_fingerprint", "VARCHAR(128)"),
     ("account_type", "VARCHAR(16) DEFAULT 'normal'"),
     ("is_admin", "BOOLEAN DEFAULT FALSE"),
+    ("trial_eligible", "BOOLEAN DEFAULT TRUE"),
 ]
 
 

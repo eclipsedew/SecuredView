@@ -112,23 +112,20 @@ def _try_grant_trial(db: Session, account: Account, device_key: str, ip_key: str
 @router.post("/register", response_model=TokenResponse)
 @limiter.limit("20/hour")
 def register(request: Request, req: AccountCreate, db: Session = Depends(get_db)):
-    """Create account + 3-day trial clock from exact creation time. No email required."""
+    """Create account + 3-day trial clock from exact creation time. No email required.
+
+    Same device coming back (logged out / deleted account)? Signup is still
+    allowed — the device row moves to the new account. The trial-claim ledger
+    guarantees this device never gets a second free trial.
+    """
     existing_device = db.query(Device).filter(
         Device.device_id == req.device_id,
-        Device.is_active == True,
-    ).first()
-    if existing_device:
-        raise HTTPException(
-            status_code=409,
-            detail="Device is already registered to another account",
-        )
+    ).order_by(Device.is_active.desc()).first()
 
     ip_key = trial_ip_key(request)
-    device = Device(
-        device_id=req.device_id,
-        device_name=req.device_name[:128] if req.device_name and req.device_name != 'unknown' else _generate_device_name(),
-        platform=req.platform[:PLATFORM_MAX_LENGTH],
-    )
+    device_name = (req.device_name[:128]
+                   if req.device_name and req.device_name != 'unknown'
+                   else _generate_device_name())
     account = Account(
         pin_hash=hash_pin(req.pin),
         display_name="User",
@@ -136,11 +133,26 @@ def register(request: Request, req: AccountCreate, db: Session = Depends(get_db)
     )
     db.add(account)
     db.flush()
-    device.account_id = account.id
-    db.add(device)
+    if existing_device is not None:
+        # Reclaim: move this device to the freshly created account.
+        device = existing_device
+        device.account_id = account.id
+        device.is_active = True
+        device.last_seen = datetime.now(timezone.utc)
+        device.device_name = device_name
+        device.platform = req.platform[:PLATFORM_MAX_LENGTH]
+    else:
+        device = Device(
+            device_id=req.device_id,
+            device_name=device_name,
+            platform=req.platform[:PLATFORM_MAX_LENGTH],
+        )
+        device.account_id = account.id
+        db.add(device)
 
     # Trial requires hardware fingerprint — bare random device_ids cannot farm trials.
     if not req.fingerprint:
+        account.trial_eligible = False  # cannot verify hardware → never trial
         db.commit()
         db.refresh(account)
         token = create_access_token(account.id)
@@ -168,6 +180,9 @@ def register(request: Request, req: AccountCreate, db: Session = Depends(get_db)
             fingerprint=req.fingerprint,
             claimed_at=ensure_utc(account.trial_started_at) or datetime.now(timezone.utc),
         ))
+    # Signup on a device that already burned its trial (or IP-capped) → this
+    # account is permanently trial-ineligible, on ANY device it logs in from.
+    account.trial_eligible = bool(granted)
     db.commit()
     db.refresh(account)
 
@@ -209,11 +224,14 @@ def login(request: Request, req: AccountLogin, db: Session = Depends(get_db)):
 
     # Admin-created trial accounts (normal=3d, special=15d): arm the trial
     # clock on FIRST login — days don't burn while the account sits unused.
+    # Accounts signed up on an already-trial-burned device are flagged
+    # trial_eligible=False at registration and never arm, on any device.
     if (
         account.account_type in ("normal", "special")
         and not account.is_trial
         and not account.is_premium
         and not account.trial_started_at
+        and account.trial_eligible is not False
     ):
         trial_days = TRIAL_DAYS if account.account_type == "normal" else SPECIAL_TRIAL_DAYS
         _now = datetime.now(timezone.utc)
@@ -222,6 +240,17 @@ def login(request: Request, req: AccountLogin, db: Session = Depends(get_db)):
         account.is_trial = True
         account.is_premium = True
         account.premium_expires_at = account.trial_ends_at
+        # Seal this device in the ledger so it can't mint trials elsewhere.
+        _ip = trial_ip_key(request)
+        db.add(TrialClaim(
+            device_key=req.device_id, ip_key=_ip, account_id=account.id,
+            fingerprint=req.fingerprint, claimed_at=_now,
+        ))
+        if req.fingerprint and req.fingerprint != req.device_id:
+            db.add(TrialClaim(
+                device_key=req.fingerprint, ip_key=_ip, account_id=account.id,
+                fingerprint=req.fingerprint, claimed_at=_now,
+            ))
         db.commit()
         db.refresh(account)
 

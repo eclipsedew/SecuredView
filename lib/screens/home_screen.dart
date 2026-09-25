@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../services/vpn_service.dart';
@@ -838,8 +839,21 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         if (!mounted) return;
                         if (success) {
                           nav.pop();
-                          // Admin lands on the admin dashboard — no auto-connect.
-                          if (!accountService.isAdmin) {
+                          if (isLogin) {
+                            // Admin lands on the admin dashboard — no auto-connect.
+                            if (!accountService.isAdmin) {
+                              _animateConnect();
+                              vpnService.connect();
+                            }
+                          } else {
+                            // Brand-new account: show the Account ID first —
+                            // this is the one moment the user must see it.
+                            final accId =
+                                accountService.account?.accountId ?? '';
+                            final hadTrial =
+                                accountService.account?.isTrial ?? false;
+                            await _showAccountCreatedDialog(accId, hadTrial);
+                            if (!mounted) return;
                             _animateConnect();
                             vpnService.connect();
                           }
@@ -879,6 +893,72 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             ),
           );
         },
+      ),
+    );
+  }
+
+  /// Shown once after a successful signup — the only moment the user ever
+  /// sees their Account ID. No email/reset flow exists, so it must be saved.
+  Future<void> _showAccountCreatedDialog(String accountId, bool hadTrial) async {
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+        title: Text('Account created successfully!',
+            style: GoogleFonts.archivo(fontWeight: FontWeight.w700, fontSize: 18)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              hadTrial
+                  ? 'Your 3-day free trial has started.'
+                  : 'No free trial on this account — this device already used its free one.',
+              style: GoogleFonts.publicSans(fontSize: 12.5, color: AppTheme.textMed),
+            ),
+            const SizedBox(height: 14),
+            Text('Account ID',
+                style: GoogleFonts.publicSans(fontSize: 11, color: AppTheme.textLow)),
+            const SizedBox(height: 2),
+            Row(
+              children: [
+                Expanded(
+                  child: SelectableText(
+                    accountId,
+                    style: GoogleFonts.jetBrainsMono(
+                        fontSize: 20, fontWeight: FontWeight.w700),
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Copy',
+                  icon: const Icon(Icons.copy_rounded, size: 18),
+                  color: AppTheme.accent,
+                  onPressed: () async {
+                    await Clipboard.setData(ClipboardData(text: accountId));
+                  },
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Save this ID now — there is no reset email. The same Account ID and PIN log you in on your other devices (up to 3 while premium).',
+              style: GoogleFonts.publicSans(fontSize: 12.5, color: AppTheme.textMed),
+            ),
+          ],
+        ),
+        actions: [
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.blue,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(2)),
+            ),
+            child: Text('Save & Continue',
+                style: GoogleFonts.archivo(
+                    color: Colors.white, fontWeight: FontWeight.w600)),
+          ),
+        ],
       ),
     );
   }

@@ -29,6 +29,9 @@ class Account(Base):
     # Account class: normal (3-day trial) / special (15-day trial) /
     # premium (paid days chosen by admin) / legacy (created before dashboard).
     account_type = Column(String(16), default="normal")
+    # False = this account must never receive a trial (signup on a device
+    # that already burned its one free trial). Set once at registration.
+    trial_eligible = Column(Boolean, default=True)
     # Trial / paid plan (3-day trial from account creation → manual Paystack purchase)
     email = Column(String(254), nullable=True, index=True)
     trial_started_at = Column(DateTime, nullable=True)
