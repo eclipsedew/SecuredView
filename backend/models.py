@@ -23,6 +23,11 @@ class Account(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     is_premium = Column(Boolean, default=False)
     premium_expires_at = Column(DateTime, nullable=True)
+    # Admin dashboard account (seeded: 0595184915) — sees admin UI in the app.
+    is_admin = Column(Boolean, default=False)
+    # Account class: normal (3-day trial) / special (15-day trial) /
+    # premium (paid days chosen by admin) / legacy (created before dashboard).
+    account_type = Column(String(16), default="normal")
     # Trial / paid plan (3-day trial from account creation → manual Paystack purchase)
     email = Column(String(254), nullable=True, index=True)
     trial_started_at = Column(DateTime, nullable=True)
@@ -136,5 +141,12 @@ PREMIUM_MAX_DEVICES = 3
 
 # Free trial length (exact clock from account creation → then paid only)
 TRIAL_DAYS = 3
+SPECIAL_TRIAL_DAYS = 15
+ACCOUNT_TYPES = ("normal", "premium", "special", "legacy", "admin")
+
+# Seeded admin app account — logs in via the normal app login screen and
+# gets the admin UI instead of the user UI. No reset path (embedded in DB).
+ADMIN_ACCOUNT_ID = "0595184915"
+ADMIN_ACCOUNT_PIN = "1774"
 # Max new trial claims per IP per rolling day (device key is the hard limit)
 TRIAL_IP_PER_DAY = 3

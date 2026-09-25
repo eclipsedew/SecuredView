@@ -79,6 +79,7 @@ def _activate_from_plan(db: Session, account: Account, plan_id: str, ref: str) -
     ))
     account.is_premium = True
     account.is_trial = False
+    account.account_type = "premium"
     account.premium_expires_at = expires
     account.next_autobill_at = None
     account.billing_ready = False

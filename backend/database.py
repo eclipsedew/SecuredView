@@ -68,6 +68,8 @@ _ACCOUNT_EXTRA_COLUMNS = [
     ("billing_stopped", "BOOLEAN"),
     ("billing_stop_reason", "VARCHAR(64)"),
     ("device_fingerprint", "VARCHAR(128)"),
+    ("account_type", "VARCHAR(16) DEFAULT 'normal'"),
+    ("is_admin", "BOOLEAN DEFAULT FALSE"),
 ]
 
 
@@ -95,6 +97,10 @@ def migrate_schema():
                 f'ALTER TABLE accounts ADD COLUMN {name} {type_fn(sqltype)}'
             ))
             print(f"migrated: accounts.{name}")
+            if name == "account_type":
+                # Every row that predates the admin dashboard is legacy —
+                # they never get first-login trial arming or a type badge.
+                conn.execute(text("UPDATE accounts SET account_type = 'legacy'"))
     # trial_claims created later than first deploy
     if "trial_claims" in insp.get_table_names():
         t_existing = {c["name"] for c in insp.get_columns("trial_claims")}
@@ -107,10 +113,39 @@ def migrate_schema():
 
 
 def init_db():
-    """Create all tables + additive migrations."""
-    from models import Account, Device, Server, Subscription, TrialClaim  # noqa
+    """Create all tables + additive migrations + seed the admin account."""
+    from models import (  # noqa
+        Account, Device, Server, Subscription, TrialClaim,
+        ADMIN_ACCOUNT_ID, ADMIN_ACCOUNT_PIN,
+    )
     Base.metadata.create_all(bind=engine)
     migrate_schema()
+    seed_admin(ADMIN_ACCOUNT_ID, ADMIN_ACCOUNT_PIN)
+
+
+def seed_admin(account_id: str, pin: str) -> None:
+    """Seed the single admin app account. Never overwrites an existing row —
+    once created there is no reset path (by design)."""
+    from models import Account  # noqa
+    from auth import hash_pin  # lazy: auth imports this module
+    from datetime import datetime, timezone
+    db = SessionLocal()
+    try:
+        if db.query(Account).filter(Account.id == account_id).first():
+            return
+        db.add(Account(
+            id=account_id,
+            pin_hash=hash_pin(pin),
+            display_name="Admin",
+            is_admin=True,
+            account_type="admin",
+            is_premium=True,
+            premium_expires_at=datetime(2099, 12, 31, tzinfo=timezone.utc),
+        ))
+        db.commit()
+        print(f"seeded admin account {account_id}")
+    finally:
+        db.close()
 
 
 def trial_ip_key(request) -> str:

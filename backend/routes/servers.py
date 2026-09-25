@@ -13,6 +13,8 @@ router = APIRouter(prefix="/api/servers", tags=["servers"])
 def _require_admin(auth=Depends(require_auth_or_admin)):
     if isinstance(auth, dict) and auth.get("is_admin"):
         return auth
+    if isinstance(auth, Account) and auth.is_admin:
+        return auth
     from fastapi import HTTPException
     raise HTTPException(status_code=403, detail="Admin access required")
 

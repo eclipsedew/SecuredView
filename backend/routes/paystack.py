@@ -228,6 +228,7 @@ def _activate_plan_period(
 
     account.is_premium = True
     account.is_trial = False
+    account.account_type = "premium"
     account.premium_expires_at = expires
     # No auto-bill clock — manual subscribe only
     account.next_autobill_at = None

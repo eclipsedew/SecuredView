@@ -69,7 +69,8 @@ class AccountCreate(BaseModel):
 
 
 class AccountLogin(BaseModel):
-    account_id: str = Field(..., min_length=16, max_length=16)
+    # 6..16: seeded admin ID (0595184915) is 10 chars, normal IDs are 16.
+    account_id: str = Field(..., min_length=6, max_length=16)
     pin: str = Field(..., min_length=4, max_length=4)
     device_id: str = Field(..., min_length=8, max_length=128)
     device_name: str = Field(default="Unknown Device", max_length=128)
@@ -96,7 +97,11 @@ class AccountLogin(BaseModel):
     @field_validator("account_id")
     @classmethod
     def account_id_hex(cls, v):
+        from models import ADMIN_ACCOUNT_ID
         v = v.strip().upper()
+        # Normal IDs: 16-char uppercase hex. Seeded admin ID: exact match.
+        if v == ADMIN_ACCOUNT_ID:
+            return v
         if not re.fullmatch(r"[A-F0-9]{16}", v):
             raise ValueError("Invalid account ID format")
         return v
@@ -124,6 +129,8 @@ class AccountInfo(BaseModel):
     billing_ready: bool = False
     device_fingerprint: Optional[str] = None
     device_ids: list[str] = Field(default_factory=list)
+    is_admin: bool = False
+    account_type: str = "normal"
 
     class Config:
         from_attributes = True
@@ -147,6 +154,37 @@ class TokenResponse(BaseModel):
     trial_ends_at: Optional[datetime] = None
     next_autobill_at: Optional[datetime] = None
     billing_ready: bool = False
+    is_admin: bool = False
+
+
+class AdminAccountCreate(BaseModel):
+    """Admin dashboard: create a user account of a chosen class."""
+    account_type: str = Field(..., description="normal | special | premium")
+    pin: Optional[str] = Field(
+        default=None, description="4-digit PIN; auto-generated if omitted"
+    )
+    display_name: Optional[str] = Field(default=None, max_length=64)
+    days: Optional[int] = Field(
+        default=None, ge=1, le=36500,
+        description="Premium only: days of premium access",
+    )
+
+    @field_validator("account_type")
+    @classmethod
+    def _valid_type(cls, v: str) -> str:
+        v = v.lower().strip()
+        if v not in ("normal", "special", "premium"):
+            raise ValueError("account_type must be normal, special or premium")
+        return v
+
+    @field_validator("pin")
+    @classmethod
+    def _valid_pin(cls, v: Optional[str]) -> Optional[str]:
+        if v is None or v == "":
+            return None
+        if not re.fullmatch(r"\d{4}", v):
+            raise ValueError("PIN must be exactly 4 digits")
+        return v
 
 
 # ── Device ───────────────────────────────────────────────

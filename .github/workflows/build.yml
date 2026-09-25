@@ -166,6 +166,9 @@ jobs:
       - name: Package Linux
         run: |
           cd artifacts/linux-build
+          # actions/download-artifact strips exec bits — restore on top-level
+          # files (launcher `securedview` etc.) or the tarball won't run.
+          find . -maxdepth 1 -type f -exec chmod +x {} +
           tar czf ../../SecuredView-Linux.tar.gz .
 
       - name: Package Windows

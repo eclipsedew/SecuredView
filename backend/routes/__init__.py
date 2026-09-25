@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from database import get_db, trial_ip_key
 from models import (
     Account, Device, TrialClaim, FREE_MAX_DEVICES, PREMIUM_MAX_DEVICES,
-    TRIAL_DAYS, TRIAL_IP_PER_DAY,
+    TRIAL_DAYS, TRIAL_IP_PER_DAY, SPECIAL_TRIAL_DAYS,
 )
 from schemas import (
     AccountCreate, AccountLogin, AccountInfo, TokenResponse, DeviceInfo, UpdateName
@@ -205,6 +205,24 @@ def login(request: Request, req: AccountLogin, db: Session = Depends(get_db)):
     except Exception:
         db.rollback()
 
+    # Admin-created trial accounts (normal=3d, special=15d): arm the trial
+    # clock on FIRST login — days don't burn while the account sits unused.
+    if (
+        account.account_type in ("normal", "special")
+        and not account.is_trial
+        and not account.is_premium
+        and not account.trial_started_at
+    ):
+        trial_days = TRIAL_DAYS if account.account_type == "normal" else SPECIAL_TRIAL_DAYS
+        _now = datetime.now(timezone.utc)
+        account.trial_started_at = _now
+        account.trial_ends_at = _now + timedelta(days=trial_days)
+        account.is_trial = True
+        account.is_premium = True
+        account.premium_expires_at = account.trial_ends_at
+        db.commit()
+        db.refresh(account)
+
     max_devs = _max_devices(account)
 
     existing = db.query(Device).filter(
@@ -266,6 +284,7 @@ def login(request: Request, req: AccountLogin, db: Session = Depends(get_db)):
         trial_ends_at=ensure_utc(account.trial_ends_at),
         next_autobill_at=None,
         billing_ready=bool(account.billing_ready),
+        is_admin=bool(account.is_admin),
     )
 
 
@@ -299,6 +318,8 @@ def get_me(account: Account = Depends(get_current_account), db: Session = Depend
         trial_started_at=ensure_utc(account.trial_started_at),
         trial_ends_at=ensure_utc(account.trial_ends_at),
         billing_ready=bool(account.billing_ready),
+        is_admin=bool(account.is_admin),
+        account_type=account.account_type or "normal",
     )
 
 

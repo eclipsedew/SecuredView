@@ -1,17 +1,28 @@
 """Admin routes for managing accounts, servers, and stats."""
 import secrets as _secrets
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from database import get_db
 from models import Account, Device, Server, Subscription, FREE_MAX_DEVICES, PREMIUM_MAX_DEVICES
-from schemas import ServerStats, AdminLogin, TokenResponse, AccountInfo, FingerprintPurgeRequest
+from schemas import (
+    ServerStats, AdminLogin, TokenResponse, AccountInfo,
+    FingerprintPurgeRequest, AdminAccountCreate,
+)
 from models import TrialClaim
-from auth import verify_admin, create_access_token, require_auth_or_admin
+from auth import verify_admin, create_access_token, require_auth_or_admin, hash_pin
 from limiter import limiter
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
+
+
+class PremiumGrant(BaseModel):
+    """Grant body. Neither field set = unlimited free premium (2099-12-31)."""
+    days: Optional[int] = Field(default=None, ge=1, le=36500)
+    expires_at: Optional[str] = None  # ISO-8601 datetime
 
 
 def _max_devices(account: Account) -> int:
@@ -25,10 +36,39 @@ def _max_devices(account: Account) -> int:
 
 
 def _require_admin(auth=Depends(require_auth_or_admin)):
-    """Ensure the caller is an admin."""
+    """Admin = seeded admin app account (is_admin) or legacy __admin__ token."""
     if isinstance(auth, dict) and auth.get("is_admin"):
         return auth
+    if isinstance(auth, Account) and auth.is_admin:
+        return auth
     raise HTTPException(status_code=403, detail="Admin access required")
+
+
+def _account_info(acc: Account, db: Session) -> AccountInfo:
+    device_count = db.query(func.count(Device.id)).filter(
+        Device.account_id == acc.id, Device.is_active == True
+    ).scalar()
+    device_ids = [
+        r[0] for r in db.query(Device.device_id)
+        .filter(Device.account_id == acc.id).all()
+    ]
+    return AccountInfo(
+        id=acc.id,
+        display_name=acc.display_name,
+        is_premium=acc.is_premium,
+        premium_expires_at=acc.premium_expires_at,
+        device_count=device_count,
+        max_devices=_max_devices(acc),
+        created_at=acc.created_at,
+        is_trial=bool(acc.is_trial),
+        trial_started_at=acc.trial_started_at,
+        trial_ends_at=acc.trial_ends_at,
+        billing_ready=bool(acc.billing_ready),
+        device_fingerprint=acc.device_fingerprint,
+        device_ids=device_ids,
+        is_admin=bool(acc.is_admin),
+        account_type=acc.account_type or "normal",
+    )
 
 
 # Admin login brute-force tracking
@@ -105,33 +145,14 @@ def list_accounts(
     _=Depends(_require_admin),
     db: Session = Depends(get_db),
 ):
-    """List all accounts."""
-    accounts = db.query(Account).order_by(Account.created_at.desc()).all()
-    result = []
-    for acc in accounts:
-        device_count = db.query(func.count(Device.id)).filter(
-            Device.account_id == acc.id, Device.is_active == True
-        ).scalar()
-        device_ids = [
-            r[0] for r in db.query(Device.device_id)
-            .filter(Device.account_id == acc.id).all()
-        ]
-        result.append(AccountInfo(
-            id=acc.id,
-            display_name=acc.display_name,
-            is_premium=acc.is_premium,
-            premium_expires_at=acc.premium_expires_at,
-            device_count=device_count,
-            max_devices=_max_devices(acc),
-            created_at=acc.created_at,
-            is_trial=bool(acc.is_trial),
-            trial_started_at=acc.trial_started_at,
-            trial_ends_at=acc.trial_ends_at,
-            billing_ready=bool(acc.billing_ready),
-            device_fingerprint=acc.device_fingerprint,
-            device_ids=device_ids,
-        ))
-    return result
+    """List user accounts (the admin row itself is excluded)."""
+    accounts = (
+        db.query(Account)
+        .filter(Account.is_admin != True)
+        .order_by(Account.created_at.desc())
+        .all()
+    )
+    return [_account_info(acc, db) for acc in accounts]
 
 
 @router.get("/accounts/{account_id}", response_model=AccountInfo)
@@ -143,25 +164,128 @@ def get_account(
     acc = db.query(Account).filter(Account.id == account_id.upper()).first()
     if not acc:
         raise HTTPException(status_code=404, detail="Account not found")
-    device_count = db.query(func.count(Device.id)).filter(
-        Device.account_id == acc.id, Device.is_active == True
-    ).scalar()
-    device_ids = [r[0] for r in db.query(Device.device_id).filter(Device.account_id == acc.id).all()]
-    return AccountInfo(
-        id=acc.id,
-        display_name=acc.display_name,
-        is_premium=acc.is_premium,
-        premium_expires_at=acc.premium_expires_at,
-        device_count=device_count,
-        max_devices=_max_devices(acc),
-        created_at=acc.created_at,
-        is_trial=bool(acc.is_trial),
-        trial_started_at=acc.trial_started_at,
-        trial_ends_at=acc.trial_ends_at,
-        billing_ready=bool(acc.billing_ready),
-        device_fingerprint=acc.device_fingerprint,
-        device_ids=device_ids,
+    return _account_info(acc, db)
+
+
+@router.post("/accounts")
+def create_account(
+    req: AdminAccountCreate,
+    _=Depends(_require_admin),
+    db: Session = Depends(get_db),
+):
+    """Create a user account from the admin dashboard.
+
+    - normal: 3-day trial, clock starts on the account's first login
+    - special: 15-day trial, clock starts on first login
+    - premium: admin chooses the number of days, active immediately
+    """
+    if req.account_type == "premium" and not req.days:
+        raise HTTPException(status_code=400, detail="days is required for premium accounts")
+
+    pin = req.pin or f"{_secrets.randbelow(10000):04d}"
+    now = datetime.now(timezone.utc)
+    acc = Account(
+        pin_hash=hash_pin(pin),
+        display_name=(req.display_name or "User")[:64],
+        account_type=req.account_type,
     )
+    if req.account_type == "premium":
+        acc.is_premium = True
+        acc.is_trial = False
+        acc.premium_expires_at = now + timedelta(days=req.days)
+    db.add(acc)
+    db.flush()
+
+    if req.account_type == "premium":
+        db.add(Subscription(
+            account_id=acc.id,
+            plan="premium_90",
+            days=req.days,
+            amount_usd=0.0,
+            status="active",
+            expires_at=acc.premium_expires_at,
+            payment_ref=f"admin-create-{acc.id}-{int(now.timestamp())}",
+        ))
+    db.commit()
+    db.refresh(acc)
+
+    info = _account_info(acc, db)
+    return {
+        "account_id": acc.id,
+        "pin": pin,
+        "account_type": acc.account_type,
+        "info": info.model_dump(mode="json"),
+        "note": (
+            f"Premium active for {req.days} days"
+            if acc.account_type == "premium"
+            else f"{req.account_type.capitalize()} trial "
+                 f"({'3' if acc.account_type == 'normal' else '15'} days) "
+                 f"starts at first login"
+        ),
+    }
+
+
+@router.post("/accounts/{account_id}/premium")
+def grant_premium(
+    account_id: str,
+    payload: Optional[PremiumGrant] = None,
+    _=Depends(_require_admin),
+    db: Session = Depends(get_db),
+):
+    """Grant premium to an account. Default: unlimited free premium until 2099.
+
+    Clears the trial clock and autobill state so the account never expires
+    or auto-charges. Writes an amount=0 Subscription row so premium history
+    renders in the app.
+    """
+    acc = db.query(Account).filter(Account.id == account_id.upper()).first()
+    if not acc:
+        raise HTTPException(status_code=404, detail="Account not found")
+
+    now = datetime.now(timezone.utc)
+    exp: datetime
+    if payload and payload.days:
+        # Extend from now, or stack on remaining active premium time
+        current = acc.premium_expires_at
+        if current is not None and current.tzinfo is None:
+            current = current.replace(tzinfo=timezone.utc)
+        base = current if (acc.is_premium and current and current > now) else now
+        exp = base + timedelta(days=payload.days)
+    elif payload and payload.expires_at:
+        try:
+            exp = datetime.fromisoformat(payload.expires_at)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="expires_at must be ISO-8601")
+        if exp.tzinfo is None:
+            exp = exp.replace(tzinfo=timezone.utc)
+    else:
+        exp = datetime(2099, 12, 31, tzinfo=timezone.utc)
+
+    if exp <= now:
+        raise HTTPException(status_code=400, detail="expiry must be in the future")
+
+    acc.is_premium = True
+    acc.is_trial = False
+    acc.premium_expires_at = exp
+    acc.trial_started_at = None
+    acc.trial_ends_at = None
+    acc.next_autobill_at = None
+
+    db.add(Subscription(
+        account_id=acc.id,
+        plan="premium_90",
+        days=max(1, (exp - now).days),
+        amount_usd=0.0,
+        status="active",
+        expires_at=exp,
+        payment_ref=f"admin-{acc.id}-{int(now.timestamp())}",
+    ))
+    db.commit()
+    return {
+        "account_id": acc.id,
+        "is_premium": True,
+        "premium_expires_at": exp.isoformat(),
+    }
 
 
 @router.delete("/accounts/{account_id}")
@@ -180,6 +304,8 @@ def delete_account(
     acc = db.query(Account).filter(Account.id == account_id.upper()).first()
     if not acc:
         raise HTTPException(status_code=404, detail="Account not found")
+    if acc.is_admin:
+        raise HTTPException(status_code=400, detail="The admin account cannot be deleted")
     fp = acc.device_fingerprint
     if purge_fingerprint:
         # Full wipe for this hardware: claims by account / fingerprint / device_id
