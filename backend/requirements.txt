@@ -1,9 +1,17 @@
-fastapi
-uvicorn[standard]
-sqlalchemy
-pydantic
-python-jose[cryptography]
-python-multipart
-slowapi
-httpx
-psycopg2-binary
+# Pinned to the versions of the last known-live deploy (2026-09-24).
+# WHY: Render reinstalls these on EVERY deploy (no-cache build) — unpinned
+# drift broke prod twice in one day:
+#   * sqlalchemy 2.1 (2026-09-24 20:12) switched postgresql:// to the
+#     psycopg v3 driver -> ModuleNotFoundError: psycopg -> update_failed
+#   * uvicorn 0.54.0 (2026-09-25 06:52) was the other new variable
+# Bump deliberately, one package at a time, and verify a Render deploy.
+fastapi==0.141.1
+starlette==1.7.0
+uvicorn[standard]==0.53.0
+sqlalchemy==2.0.54
+pydantic==2.13.5
+python-jose[cryptography]==3.5.0
+python-multipart==0.0.32
+slowapi==0.1.10
+httpx==0.28.1
+psycopg2-binary==2.9.13

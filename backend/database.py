@@ -7,9 +7,14 @@ DB_PATH = os.path.join(os.path.dirname(__file__), "securevpn.db")
 
 # Render/Postgres (or any DATABASE_URL) wins; local default stays SQLite.
 DATABASE_URL = os.getenv("DATABASE_URL") or f"sqlite:///{DB_PATH}"
-# Render sometimes injects postgres:// — SQLAlchemy wants postgresql://
+# Render sometimes injects postgres:// — SQLAlchemy wants postgresql://.
+# SQLAlchemy >= 2.1 silently switched bare postgresql:// to the psycopg (v3)
+# driver, but we ship psycopg2-binary; that mismatch crashed every deploy
+# (ModuleNotFoundError: psycopg). Pin the driver into the URL explicitly.
 if DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = "postgresql://" + DATABASE_URL[len("postgres://"):]
+    DATABASE_URL = "postgresql+psycopg2://" + DATABASE_URL[len("postgres://"):]
+elif DATABASE_URL.startswith("postgresql://"):
+    DATABASE_URL = "postgresql+psycopg2://" + DATABASE_URL[len("postgresql://"):]
 
 _IS_SQLITE = DATABASE_URL.startswith("sqlite")
 
