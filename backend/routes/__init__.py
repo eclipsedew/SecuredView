@@ -286,18 +286,26 @@ def login(request: Request, req: AccountLogin, db: Session = Depends(get_db)):
             Device.account_id != account.id,
         ).first()
         if other_account_device:
-            raise HTTPException(
-                status_code=409,
-                detail="Device is already registered to another account",
+            # Device possession wins (same rule as registration): the row
+            # follows whoever is physically on this machine. Lets one human
+            # switch accounts on a single device (user ↔ admin) — the old
+            # 409 locked the admin out of their own box.
+            other_account_device.account_id = account.id
+            other_account_device.last_seen = datetime.now(timezone.utc)
+            other_account_device.is_active = True
+            if req.device_name:
+                other_account_device.device_name = req.device_name[:128]
+            other_account_device.platform = req.platform[:PLATFORM_MAX_LENGTH]
+            if req.fingerprint and not account.device_fingerprint:
+                account.device_fingerprint = req.fingerprint
+        else:
+            device = Device(
+                account_id=account.id,
+                device_id=req.device_id,
+                device_name=_generate_device_name(),
+                platform=req.platform[:PLATFORM_MAX_LENGTH],
             )
-
-        device = Device(
-            account_id=account.id,
-            device_id=req.device_id,
-            device_name=_generate_device_name(),
-            platform=req.platform[:PLATFORM_MAX_LENGTH],
-        )
-        db.add(device)
+            db.add(device)
 
     db.commit()
     db.refresh(account)
