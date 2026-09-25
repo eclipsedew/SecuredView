@@ -1,0 +1,14 @@
+# SecuredView — https://securedviewvpn.com
+# All crawlers welcome, including AI search/answer engines
+# (GPTBot, OAI-SearchBot, ChatGPT-User, ClaudeBot, PerplexityBot, ...).
+
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /docs
+Disallow: /redoc
+Disallow: /openapi.json
+Disallow: /health
+Disallow: /dl/
+
+Sitemap: https://securedviewvpn.com/sitemap.xml

@@ -1,0 +1,13 @@
+# SecuredView
+
+> SecuredView is a cross-platform VPN client built on Cloudflare WARP (MASQUE). It offers a free tier and premium plans, with apps for Android, Windows, and Linux. Designed for privacy and for staying reachable in censoring networks (mainland China and similar), it serves its own binaries because GitHub's asset CDN is blocked there.
+
+## Pages
+
+- [Home](https://securedviewvpn.com/): Product overview and features
+- [Apps](https://securedviewvpn.com/apps): Supported platforms and downloads
+- [Network](https://securedviewvpn.com/network): Infrastructure and server locations
+- [Pricing](https://securedviewvpn.com/pricing): Free tier and premium plans (Paystack)
+- [Download](https://securedviewvpn.com/download): Direct binaries (APK, Windows zip, Linux tar.gz) served from this domain
+- [Privacy Policy](https://securedviewvpn.com/privacy): What we collect — as little as possible
+- [Terms of Service](https://securedviewvpn.com/terms): Terms of use

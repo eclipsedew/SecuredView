@@ -6,7 +6,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.staticfiles import StaticFiles
 from slowapi.errors import RateLimitExceeded
-from starlette.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
+from starlette.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    PlainTextResponse,
+    RedirectResponse,
+    Response,
+)
 
 # Load .env file (local dev only — Render injects real env vars)
 _env_file = Path(__file__).parent / ".env"
@@ -126,58 +133,62 @@ def _redirect(to: str) -> RedirectResponse:
     return RedirectResponse(url=to, status_code=308)
 
 
-@app.get("/", response_class=HTMLResponse)
+# NOTE: site pages register GET+HEAD — plain @app.get returns 405 for HEAD,
+# which some crawlers/link-checkers probe with before fetching.
+
+
+@app.api_route("/", response_class=HTMLResponse, methods=["GET", "HEAD"])
 @limiter.exempt
 def site_home():
     """Marketing home page (domain root when a custom domain is attached)."""
     return _site_html("index.html")
 
 
-@app.get("/health")
+@app.api_route("/health", methods=["GET", "HEAD"])
 @limiter.exempt
 def health():
     return {"status": "ok"}
 
 
-@app.get("/apps", response_class=HTMLResponse)
-@app.get("/apps.html", response_class=HTMLResponse)
+@app.api_route("/apps", response_class=HTMLResponse, methods=["GET", "HEAD"])
+@app.api_route("/apps.html", response_class=HTMLResponse, methods=["GET", "HEAD"])
 @limiter.exempt
 def site_apps():
     return _site_html("apps.html")
 
 
-@app.get("/network", response_class=HTMLResponse)
-@app.get("/network.html", response_class=HTMLResponse)
+@app.api_route("/network", response_class=HTMLResponse, methods=["GET", "HEAD"])
+@app.api_route("/network.html", response_class=HTMLResponse, methods=["GET", "HEAD"])
 @limiter.exempt
 def site_network():
     return _site_html("network.html")
 
 
-@app.get("/pricing", response_class=HTMLResponse)
-@app.get("/free", response_class=HTMLResponse)
-@app.get("/free.html", response_class=HTMLResponse)
+@app.api_route("/pricing", response_class=HTMLResponse, methods=["GET", "HEAD"])
+@app.api_route("/free", response_class=HTMLResponse, methods=["GET", "HEAD"])
+@app.api_route("/free.html", response_class=HTMLResponse, methods=["GET", "HEAD"])
 @limiter.exempt
 def site_pricing():
     return _site_html("free.html")
 
 
-@app.get("/privacy", response_class=HTMLResponse)
-@app.get("/privacy.html", response_class=HTMLResponse)
+@app.api_route("/privacy", response_class=HTMLResponse, methods=["GET", "HEAD"])
+@app.api_route("/privacy.html", response_class=HTMLResponse, methods=["GET", "HEAD"])
 @limiter.exempt
 def site_privacy():
     return _site_html("privacy.html")
 
 
-@app.get("/terms", response_class=HTMLResponse)
-@app.get("/terms.html", response_class=HTMLResponse)
+@app.api_route("/terms", response_class=HTMLResponse, methods=["GET", "HEAD"])
+@app.api_route("/terms.html", response_class=HTMLResponse, methods=["GET", "HEAD"])
 @limiter.exempt
 def site_terms():
     return _site_html("terms.html")
 
 
 # CN-reachable download page (Vercel is often RST/reset from mainland China)
-@app.get("/download", response_class=HTMLResponse)
-@app.get("/download.html", response_class=HTMLResponse)
+@app.api_route("/download", response_class=HTMLResponse, methods=["GET", "HEAD"])
+@app.api_route("/download.html", response_class=HTMLResponse, methods=["GET", "HEAD"])
 @limiter.exempt
 def download_page():
     path = STATIC_DIR / "download.html"
@@ -186,10 +197,45 @@ def download_page():
     return HTMLResponse(path.read_text(encoding="utf-8"))
 
 
-@app.get("/index.html")
+@app.api_route("/index.html", methods=["GET", "HEAD"])
 @limiter.exempt
 def site_index_alias():
     return _redirect("/")
+
+
+# ── Crawler discovery: robots / sitemap / llms / IndexNow ─────────
+# Without these, search engines (and ChatGPT search, which rides on Bing)
+# have no way to discover or prioritise the site.
+
+
+def _static_text(rel: str) -> str:
+    return (STATIC_DIR / rel).read_text(encoding="utf-8")
+
+
+@app.api_route("/robots.txt", methods=["GET", "HEAD"], response_class=PlainTextResponse)
+@limiter.exempt
+def robots_txt():
+    return _static_text("robots.txt")
+
+
+@app.api_route("/sitemap.xml", methods=["GET", "HEAD"])
+@limiter.exempt
+def sitemap_xml():
+    return Response(content=_static_text("sitemap.xml"), media_type="application/xml")
+
+
+@app.api_route("/llms.txt", methods=["GET", "HEAD"], response_class=PlainTextResponse)
+@limiter.exempt
+def llms_txt():
+    return _static_text("llms.txt")
+
+
+@app.api_route(
+    "/.well-known/indexnow-key.txt", methods=["GET", "HEAD"], response_class=PlainTextResponse
+)
+@limiter.exempt
+def indexnow_key():
+    return _static_text(".well-known/indexnow-key.txt").strip()
 
 
 # ── Binary downloads (same host as the site — GitHub asset CDN is GFW-blocked) ──
