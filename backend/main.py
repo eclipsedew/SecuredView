@@ -238,6 +238,19 @@ def indexnow_key():
     return _static_text(".well-known/indexnow-key.txt").strip()
 
 
+# IndexNow Option 1 (docs: "strongly recommended"): key file at the host ROOT.
+# keyLocation under /.well-known/ scopes submitted URLs to that path prefix
+# only -> submissions for / /apps /pricing... got 422. Must stay LAST so
+# specific .txt routes (robots.txt) win the match.
+@app.api_route("/{root_key}.txt", methods=["GET", "HEAD"], response_class=PlainTextResponse)
+@limiter.exempt
+def indexnow_root_key(root_key: str):
+    key = _static_text(".well-known/indexnow-key.txt").strip()
+    if root_key != key:
+        return HTMLResponse("<h1>404 Not Found</h1>", status_code=404)
+    return key
+
+
 # ── Binary downloads (same host as the site — GitHub asset CDN is GFW-blocked) ──
 DOWNLOAD_DIR = STATIC_DIR / "downloads"
 DOWNLOAD_FILES = {
