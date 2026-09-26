@@ -121,6 +121,10 @@ class MainActivity : FlutterActivity() {
             result.error("NO_CONFIG", "No WARP configuration. Call register first.", null)
             return
         }
+        // Entitlement budget handed down from the UI (server-verified ms
+        // left). The service's watchdog cuts the tunnel itself when it
+        // runs out — even if this Flutter process is dead.
+        WarpVpnService.saveGrant(this, call.argument<Number>("grantBudgetMs")?.toLong())
         val prepareIntent = VpnService.prepare(this)
         if (prepareIntent != null) {
             pendingConnectResult = result

@@ -2,8 +2,32 @@
 #include <flutter/flutter_view_controller.h>
 #include <windows.h>
 
+#include <string>
+
 #include "flutter_window.h"
 #include "utils.h"
+
+// Autostart at login (HKCU — no admin rights needed) so the app (and its
+// tunnel ownership / IP display) comes up with the session after reboot.
+static void RegisterAutostart() {
+  wchar_t exePath[MAX_PATH];
+  if (::GetModuleFileNameW(nullptr, exePath, MAX_PATH) == 0) {
+    return;
+  }
+  HKEY key = nullptr;
+  if (::RegCreateKeyExW(
+          HKEY_CURRENT_USER,
+          L"Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+          0, nullptr, 0, KEY_SET_VALUE, nullptr, &key,
+          nullptr) != ERROR_SUCCESS) {
+    return;
+  }
+  const std::wstring value = L"\"" + std::wstring(exePath) + L"\"";
+  ::RegSetValueExW(key, L"SecuredView VPN", 0, REG_SZ,
+                   reinterpret_cast<const BYTE*>(value.c_str()),
+                   static_cast<DWORD>((value.size() + 1) * sizeof(wchar_t)));
+  ::RegCloseKey(key);
+}
 
 int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
                       _In_ wchar_t *command_line, _In_ int show_command) {
@@ -16,6 +40,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   // Initialize COM, so that it is available for use in the library and/or
   // plugins.
   ::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+
+  RegisterAutostart();
 
   flutter::DartProject project(L"data");
 

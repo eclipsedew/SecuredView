@@ -38,10 +38,13 @@ class WarpService {
   }
 
   /// Start the MASQUE tunnel and wait until it reports connected.
-  Future<void> connect() async {
+  /// [grantBudgetMs] = ms of server-verified entitlement left; the native
+  /// watchdog cuts the tunnel itself when the budget runs out, even if
+  /// this Flutter process is dead (trial/plan expiry while swiped away).
+  Future<void> connect({int? grantBudgetMs}) async {
     await ensureRegistered();
     try {
-      await _channel.invokeMethod('connect');
+      await _channel.invokeMethod('connect', {'grantBudgetMs': grantBudgetMs});
     } on PlatformException catch (e) {
       throw Exception(e.message ?? 'Failed to start tunnel');
     }

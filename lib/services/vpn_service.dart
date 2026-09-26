@@ -38,6 +38,7 @@ class VPNService extends ChangeNotifier {
   Timer? _killSwitchMonitor;
   Timer? _entitlementTimer;
   Timer? _entitlementSyncTimer;
+  Timer? _egressTimer;
   bool _entitlementCutting = false;
   bool _verifyInFlight = false;
   bool _restoreInFlight = false;
@@ -90,18 +91,47 @@ class VPNService extends ChangeNotifier {
     _currentServer = _servers.isNotEmpty ? _servers.first : null;
     _loadSettings();
     // Adopt native tunnel state after the channel is up (app cold start).
-    Future.delayed(const Duration(milliseconds: 400), restoreFromNative);
+    Future.delayed(const Duration(milliseconds: 400), () {
+      _takeTunnelOwnership();
+      restoreFromNative();
+    });
   }
 
   /// Sync UI with the native VpnService / Go engine after process restart.
   /// Without this, swipe-away → reopen always shows DISCONNECTED even if
   /// the sticky foreground service is still masking traffic.
+  /// Adopts ONLY with a fresh server verdict — an orphan tunnel without
+  /// entitlement is torn down (fail closed, never adopt-then-check).
   Future<void> restoreFromNative() async {
     if (_restored || _restoreInFlight || kIsWeb) return;
+    // Wait for the account/token before deciding anything — a verify or a
+    // tunnel kill at this point would run against a half-loaded session.
+    // updateAccount() retries once the session is ready.
+    if (_accountService == null ||
+        !(_accountService?.api.isAuthenticated ?? false)) {
+      return;
+    }
     if (!(Platform.isAndroid || Platform.isIOS)) {
-      // Desktop: usque process may outlive the Flutter engine (Windows).
+      // Desktop: engine/daemon may have outlived the Flutter engine.
       if (Platform.isWindows && _usque.isConnected()) {
-        _adoptConnected();
+        final ok = await _verifyEntitlementWithServer();
+        if (ok && _serverEntitlementLive()) {
+          _adoptConnected();
+        } else {
+          try {
+            await _usque.disconnect().timeout(const Duration(seconds: 3));
+          } catch (_) {}
+        }
+      } else if (Platform.isLinux && await _warpCliTunnelUp()) {
+        final ok = await _verifyEntitlementWithServer();
+        if (ok && _serverEntitlementLive()) {
+          _adoptConnected();
+        } else {
+          try {
+            await Process.run('warp-cli', ['--accept-tos', 'disconnect'])
+                .timeout(const Duration(seconds: 5));
+          } catch (_) {}
+        }
       }
       _restored = true;
       return;
@@ -109,20 +139,29 @@ class VPNService extends ChangeNotifier {
     _restoreInFlight = true;
     try {
       final up = await _warp.hasRunningTunnel().timeout(
-        const Duration(seconds: 3),
-        onTimeout: () => false,
-      );
+            const Duration(seconds: 3),
+            onTimeout: () => false,
+          );
       if (up) {
-        _adoptConnected();
+        final ok = await _verifyEntitlementWithServer();
+        if (ok && _serverEntitlementLive()) {
+          _adoptConnected();
+        } else {
+          // Sticky tunnel is up but not entitled (expired / logged out /
+          // offline cold start) — kill it. No unverified traffic, ever.
+          try {
+            await _warp.disconnect().timeout(const Duration(seconds: 4));
+          } catch (_) {}
+        }
         _restored = true;
         return;
       }
       // Tunnel is down. If we (or the service) thought we were up, treat as
       // a drop — kill-switch monitor will revive if still entitled.
       final wanted = await _warp.wasConnectedPreviously().timeout(
-        const Duration(seconds: 2),
-        onTimeout: () => false,
-      );
+            const Duration(seconds: 2),
+            onTimeout: () => false,
+          );
       _restored = true;
       if (wanted && _state == VPNState.disconnected) {
         // Leave state disconnected; kick kill-switch so a live entitlement
@@ -273,6 +312,19 @@ class VPNService extends ChangeNotifier {
       _verifiedRemainingSec = 0;
       _sinceServerVerify.reset();
       return false;
+    } on ApiException catch (e) {
+      final code = e.statusCode;
+      if (code == 401 || code == 402 || code == 403) {
+        // Definitive server denial (bad token / no entitlement) — fail
+        // closed NOW. Never grant the offline-grace window on an answer
+        // that says "no": that was a free tunnel for up to 90s per check.
+        _verifiedRemainingSec = 0;
+        _sinceServerVerify.reset();
+        return false;
+      }
+      // 429 / 5xx / unreachable host → last grant only within grace.
+      return _serverEntitlementLive() &&
+          _sinceServerVerify.elapsed < _maxOfflineGrace;
     } catch (_) {
       // Network fail: keep last grant only within grace window
       return _serverEntitlementLive() &&
@@ -420,7 +472,9 @@ class VPNService extends ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       _killSwitch = prefs.getBool('killSwitch') ?? true;
-      _autoConnect = prefs.getBool('autoConnect') ?? false;
+      // Default ON: app launches (incl. autostart after reboot) → connects
+      // when entitled, so "open the app and it just works".
+      _autoConnect = prefs.getBool('autoConnect') ?? true;
       final raw = prefs.get('selectedServer');
       final serverId = raw is String ? raw : '';
       if (serverId.isNotEmpty) {
@@ -551,7 +605,9 @@ class VPNService extends ChangeNotifier {
 
   Future<void> _connectDesktop() async {
     // Windows: MASQUE only (bundled usque.exe) — never fall back to warp-cli.
-    // Linux/macOS: usque if actually resolvable, else warp-cli.
+    // Linux/macOS: warp-cli only — usque needs root/CAP_NET_ADMIN for TUN and
+    // is not bundled; a present-but-unusable usque binary must not break
+    // the warp-cli path.
     if (Platform.isWindows) {
       if (!_usque.binaryExists) {
         throw Exception(
@@ -562,17 +618,78 @@ class VPNService extends ChangeNotifier {
       _usingUsque = true;
       return;
     }
-    if (_usque.binaryExists) {
-      await _usque.connect();
-      _usingUsque = true;
-      return;
-    }
     await _connectWarpCli();
+  }
+
+  /// Linux: Cloudflare's warp-taskbar tray fights us for warp-svc and shows a
+  /// second IP/cloud window. SecuredView must be the only VPN UI — stop the
+  /// tray and mask its user unit so it cannot come back after relogin.
+  Future<void> _takeTunnelOwnership() async {
+    if (kIsWeb || !Platform.isLinux) return;
+    try {
+      await Process.run('systemctl', ['--user', 'mask', 'warp-taskbar.service'])
+          .timeout(const Duration(seconds: 5));
+      await Process.run('systemctl', ['--user', 'stop', 'warp-taskbar.service'])
+          .timeout(const Duration(seconds: 5));
+      await Process.run('pkill', ['-x', 'warp-taskbar'])
+          .timeout(const Duration(seconds: 5));
+    } catch (_) {
+      // Best effort — missing user session bus is not fatal.
+    }
+  }
+
+  /// True when warp-cli reports a tunnel (and the daemon answers).
+  Future<bool> _warpCliTunnelUp() async {
+    if (!_warpCliPresent()) return false;
+    try {
+      final r = await Process.run('warp-cli', ['--accept-tos', 'status'])
+          .timeout(const Duration(seconds: 4));
+      final raw = r.stdout.toString();
+      final low = '$raw ${r.stderr}'.toLowerCase();
+      if (low.contains('unable to connect') || low.contains('daemon')) {
+        return false; // warp-svc is down — nothing is actually tunnelling
+      }
+      return _parseWarpStatus(raw) != 'disconnected';
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// warp-svc dead → every warp-cli call just fails with a confusing timeout.
+  /// Try to start it via polkit (GUI password prompt), else return an
+  /// actionable error message for the UI.
+  Future<String?> _ensureWarpDaemon() async {
+    Future<bool> up() async {
+      try {
+        final r = await Process.run('warp-cli', ['--accept-tos', 'status'])
+            .timeout(const Duration(seconds: 5));
+        final low = '${r.stdout} ${r.stderr}'.toLowerCase();
+        if (low.contains('unable to connect') || low.contains('daemon')) {
+          return false;
+        }
+        return r.exitCode == 0;
+      } catch (_) {
+        return false;
+      }
+    }
+
+    if (await up()) return null;
+    try {
+      await Process.run('pkexec', ['systemctl', 'start', 'warp-svc'])
+          .timeout(const Duration(seconds: 30));
+    } catch (_) {}
+    await Future.delayed(const Duration(seconds: 2));
+    if (await up()) return null;
+    return 'The Cloudflare service (warp-svc) is not running. '
+        'Run: sudo systemctl start warp-svc — then Connect again.';
   }
 
   Future<void> _connectWarpCli() async {
     try {
       _usingUsque = false;
+      await _takeTunnelOwnership();
+      final daemonErr = await _ensureWarpDaemon();
+      if (daemonErr != null) throw Exception(daemonErr);
       await Process.run('warp-cli', ['--accept-tos', 'registration', 'new']);
       await Future.delayed(const Duration(seconds: 1));
       await Process.run('warp-cli', ['--accept-tos', 'mode', 'warp']);
@@ -598,7 +715,8 @@ class VPNService extends ChangeNotifier {
       }
       throw Exception('Connection timed out');
     } catch (e) {
-      throw Exception('Desktop connection failed: $e');
+      final msg = e.toString().replaceFirst('Exception: ', '');
+      throw Exception(msg.startsWith('Desktop') ? msg : 'Desktop connection failed: $msg');
     }
   }
 
@@ -629,9 +747,18 @@ class VPNService extends ChangeNotifier {
     }
   }
 
+  /// Monotonic grant budget (ms) for the native Android watchdog — the
+  /// sticky service must cut the tunnel itself when the UI process is dead
+  /// and the trial/plan runs out.
+  int? _grantBudgetMs() {
+    final left = _serverRemainingNow;
+    if (left == null || left <= 0) return null;
+    return (left * 1000).round();
+  }
+
   Future<void> _connectMobile() async {
     try {
-      await _warp.connect();
+      await _warp.connect(grantBudgetMs: _grantBudgetMs());
       _lastConnectTime = DateTime.now();
     } catch (e) {
       throw Exception('Mobile connection failed: $e');
@@ -728,8 +855,12 @@ class VPNService extends ChangeNotifier {
             } else {
               if (!_warpCliPresent()) return;
               final result = await Process.run('warp-cli', ['--accept-tos', 'status']);
-              final status = _parseWarpStatus(result.stdout.toString());
-              tunnelUp = status != 'disconnected';
+              final raw = result.stdout.toString();
+              final status = _parseWarpStatus(raw);
+              // Daemon down prints an error, not "disconnected" — do not
+              // mistake a dead warp-svc for a live tunnel.
+              tunnelUp = status != 'disconnected' &&
+                  !raw.toLowerCase().contains('unable to connect');
             }
             if (tunnelUp || _isConnecting) return;
 
@@ -819,6 +950,10 @@ class VPNService extends ChangeNotifier {
       unawaited(_assertNativeStillUp());
       notifyListeners();
     });
+    // Keep the displayed IP fresh while connected (stale-IP bug).
+    _egressTimer = Timer.periodic(const Duration(seconds: 60), (_) {
+      if (isConnected) unawaited(_refreshEgressIp());
+    });
   }
 
   Future<void> _assertNativeStillUp() async {
@@ -868,11 +1003,31 @@ class VPNService extends ChangeNotifier {
     _egressChecking = true;
     notifyListeners();
     try {
-      final ip = await fetchEgressIp().timeout(const Duration(seconds: 8));
-      _egressIp = ip;
+      final trace =
+          await fetchEgressTrace().timeout(const Duration(seconds: 8));
+      _egressIp = trace.ip;
+      // warp=off while we claim connected → system traffic is NOT masked.
+      // warp-cli path only (usque MASQUE cannot be verified this way).
+      if (isConnected && trace.warpOff == true && !_usingUsque) {
+        final since = _connectedAt;
+        if (since != null &&
+            DateTime.now().difference(since) > const Duration(seconds: 10)) {
+          // Treat as a drop: show honest state; kill-switch revives if
+          // still entitled.
+          _state = VPNState.disconnected;
+          _connectedAt = null;
+          _stats = const ConnectionStats();
+          _stopTimers();
+          notifyListeners();
+          unawaited(_tryReviveAfterDrop());
+        }
+      }
       notifyListeners();
     } catch (_) {
-      // Leave previous value; IP check is best-effort.
+      // Never show a stale IP — an old address while "connected" lies.
+      if (_egressIp != null) {
+        _egressIp = null;
+      }
     } finally {
       _egressChecking = false;
       notifyListeners();
@@ -880,7 +1035,11 @@ class VPNService extends ChangeNotifier {
   }
 
   /// Public IP as seen by a remote host (goes through the tunnel when up).
-  static Future<String> fetchEgressIp() async {
+  static Future<String> fetchEgressIp() async =>
+      (await fetchEgressTrace()).ip;
+
+  /// Cloudflare trace: egress IP + whether Cloudflare sees us on WARP.
+  static Future<EgressTrace> fetchEgressTrace() async {
     // Cloudflare trace is small, CN-reachable, and returns `ip=` + `warp=`.
     final client = http.Client();
     try {
@@ -888,24 +1047,34 @@ class VPNService extends ChangeNotifier {
           .get(Uri.parse('https://www.cloudflare.com/cdn-cgi/trace'))
           .timeout(const Duration(seconds: 6));
       if (resp.statusCode == 200) {
+        String? ip;
+        bool? warpOff;
         for (final line in resp.body.split('\n')) {
           if (line.startsWith('ip=')) {
-            final ip = line.substring(3).trim();
-            if (ip.isNotEmpty) return ip;
+            final v = line.substring(3).trim();
+            if (v.isNotEmpty) ip = v;
+          } else if (line.startsWith('warp=')) {
+            final v = line.substring(5).trim();
+            if (v == 'off') {
+              warpOff = true;
+            } else if (v == 'on') {
+              warpOff = false;
+            }
           }
         }
+        if (ip != null) return EgressTrace(ip: ip, warpOff: warpOff);
       }
     } finally {
       client.close();
     }
-    // Fallback
+    // Fallback (no warp field available)
     final client2 = http.Client();
     try {
       final resp = await client2
           .get(Uri.parse('https://api.ipify.org?format=text'))
           .timeout(const Duration(seconds: 6));
       if (resp.statusCode == 200 && resp.body.trim().isNotEmpty) {
-        return resp.body.trim();
+        return EgressTrace(ip: resp.body.trim());
       }
     } finally {
       client2.close();
@@ -913,11 +1082,30 @@ class VPNService extends ChangeNotifier {
     throw Exception('Could not determine egress IP');
   }
 
+  /// App is exiting (desktop): the tunnel must not outlive us — nobody
+  /// would enforce entitlement on an orphan. Mobile keeps the sticky
+  /// service by design; restoreFromNative verifies-or-kills on relaunch.
+  Future<void> shutdownTunnel() async {
+    if (kIsWeb) return;
+    if (Platform.isAndroid || Platform.isIOS) return;
+    try {
+      if (_usque.isRunning || _usingUsque) {
+        await _usque.disconnect().timeout(const Duration(seconds: 2));
+      }
+      if (_warpCliPresent()) {
+        await Process.run('warp-cli', ['--accept-tos', 'disconnect'])
+            .timeout(const Duration(seconds: 3));
+      }
+    } catch (_) {}
+  }
+
   void _stopTimers() {
     _statsTimer?.cancel();
     _durationTimer?.cancel();
+    _egressTimer?.cancel();
     _statsTimer = null;
     _durationTimer = null;
+    _egressTimer = null;
   }
 
   void _updateStats() {
@@ -969,9 +1157,11 @@ class VPNService extends ChangeNotifier {
   void setKillSwitch(bool value) {
     _killSwitch = value;
     _saveSetting('killSwitch', value);
-    if (!value) {
-      _stopKillSwitchMonitor();
-    } else if (isConnected) {
+    // The liveness monitor keeps running either way — it detects drops and
+    // reports honest state; only AUTO-REVIVE is gated on the toggle
+    // (handled inside the monitor). Stopping it on "off" meant a dropped
+    // tunnel was never noticed or cut.
+    if (isConnected) {
       _startKillSwitchMonitor();
     }
     notifyListeners();
@@ -1013,4 +1203,12 @@ class VPNService extends ChangeNotifier {
     _stopEntitlementWatch();
     super.dispose();
   }
+}
+
+/// One Cloudflare trace sample: public IP + WARP visibility.
+class EgressTrace {
+  final String ip;
+  /// null = unknown (trace didn't report / fallback endpoint used).
+  final bool? warpOff;
+  EgressTrace({required this.ip, this.warpOff});
 }

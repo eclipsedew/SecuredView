@@ -9,6 +9,7 @@ import android.net.VpnService
 import android.os.Build
 import android.os.IBinder
 import android.os.ParcelFileDescriptor
+import android.os.SystemClock
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.CoroutineScope
@@ -40,6 +41,7 @@ class WarpVpnService : VpnService() {
     private var tunFd: Int = -1
     private var udpFd: Long = -1
     private var trafficJob: Job? = null
+    private var grantJob: Job? = null
     private var lastSent: Long = 0
     private var lastRecv: Long = 0
     private var lastTrafficTime: Long = 0
@@ -56,10 +58,12 @@ class WarpVpnService : VpnService() {
             ACTION_STOP -> stopTunnel()
             null -> {
                 // System restarted us after process death — revive tunnel if we
-                // were up (START_STICKY). Otherwise just die quietly.
-                if (wasConnected() && loadConfigJson() != null) {
+                // were up (START_STICKY) AND the entitlement grant still covers
+                // the time. Otherwise just die quietly (no free tunnel).
+                if (wasConnected() && loadConfigJson() != null && !grantExpired(this)) {
                     startTunnel()
                 } else {
+                    if (grantExpired(this)) markConnected(this, false)
                     stopSelf()
                 }
             }
@@ -88,6 +92,8 @@ class WarpVpnService : VpnService() {
         if (tunnelStopped) return
         tunnelStopped = true
         stopTrafficUpdates()
+        grantJob?.cancel()
+        grantJob = null
         if (blocking) {
             stopTunnelInternalBlocking()
         } else {
@@ -235,7 +241,27 @@ class WarpVpnService : VpnService() {
             stopSelf()
         } else {
             startTrafficUpdates()
+            startGrantWatchdog()
             markConnected(true)
+        }
+    }
+
+    /**
+     * Cuts the tunnel the moment the server-verified entitlement budget
+     * runs out — the Flutter process may be dead (swiped away) and nobody
+     * else is enforcing it, so the watchdog lives here in the sticky service.
+     */
+    private fun startGrantWatchdog() {
+        grantJob?.cancel()
+        grantJob = serviceScope.launch {
+            while (true) {
+                delay(1000)
+                if (grantExpired(applicationContext)) {
+                    Log.i(TAG, "Entitlement grant expired — cutting tunnel")
+                    stopTunnel()
+                    return@launch
+                }
+            }
         }
     }
 
@@ -442,6 +468,8 @@ class WarpVpnService : VpnService() {
         private const val PREFS_NAME = "warpvpn_masque"
         private const val KEY_CONFIG = "config_json"
         private const val KEY_WAS_CONNECTED = "was_connected"
+        private const val KEY_GRANT_ACTIVE = "grant_active"
+        private const val KEY_GRANT_DEADLINE = "grant_deadline_elapsed"
 
         const val ACTION_START = "com.warpvpn.START"
         const val ACTION_STOP = "com.warpvpn.STOP"
@@ -475,6 +503,32 @@ class WarpVpnService : VpnService() {
         fun wasConnected(context: android.content.Context): Boolean {
             return context.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE)
                 .getBoolean(KEY_WAS_CONNECTED, false)
+        }
+
+        /**
+         * Store the entitlement budget handed down by the UI.
+         * [budgetMs] = server-verified ms remaining; null/<=0 = no budget
+         * (admin/legacy) → watchdog disarmed. Wall-clock independent: uses
+         * elapsedRealtime so a clock change cannot extend the window.
+         */
+        fun saveGrant(context: android.content.Context, budgetMs: Long?) {
+            val prefs = context.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE)
+            val editor = prefs.edit()
+            if (budgetMs == null || budgetMs <= 0L) {
+                editor.putBoolean(KEY_GRANT_ACTIVE, false)
+            } else {
+                editor.putBoolean(KEY_GRANT_ACTIVE, true)
+                    .putLong(KEY_GRANT_DEADLINE, SystemClock.elapsedRealtime() + budgetMs)
+            }
+            editor.apply()
+        }
+
+        /** True when a budget was set and elapsedRealtime has passed it. */
+        fun grantExpired(context: android.content.Context): Boolean {
+            val prefs = context.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE)
+            if (!prefs.getBoolean(KEY_GRANT_ACTIVE, false)) return false
+            val deadline = prefs.getLong(KEY_GRANT_DEADLINE, 0L)
+            return deadline > 0L && SystemClock.elapsedRealtime() >= deadline
         }
 
         private fun wasConnected(): Boolean = instance?.let { wasConnected(it) } ?: false

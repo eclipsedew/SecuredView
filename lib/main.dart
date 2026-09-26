@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -22,6 +24,37 @@ void main() {
     DeviceOrientation.portraitUp,
   ]);
   runApp(const SecuredViewApp());
+  unawaited(_ensureAutostart());
+}
+
+/// Launch the app at login so tunnel control (and the IP display) comes up
+/// with the session — after a reboot the user just opens their desktop and
+/// SecuredView is there. Linux: XDG autostart entry (Windows does the same
+/// via an HKCU Run key in runner/main.cpp).
+Future<void> _ensureAutostart() async {
+  if (kDebugMode || kIsWeb) return;
+  try {
+    if (!Platform.isLinux) return;
+    final home = Platform.environment['HOME'];
+    if (home == null || home.isEmpty) return;
+    final dir = Directory('$home/.config/autostart');
+    await dir.create(recursive: true);
+    final exe = Platform.resolvedExecutable;
+    final file = File('${dir.path}/securedview-vpn.desktop');
+    final content = '[Desktop Entry]\n'
+        'Type=Application\n'
+        'Name=SecuredView VPN\n'
+        'Comment=SecuredView VPN autostart\n'
+        'Exec="$exe"\n'
+        'Terminal=false\n'
+        'X-GNOME-Autostart-enabled=true\n';
+    final existing = await file.exists() ? await file.readAsString() : null;
+    if (existing != content) {
+      await file.writeAsString(content);
+    }
+  } catch (_) {
+    // Best effort — a locked-down home dir must not break startup.
+  }
 }
 
 class SecuredViewApp extends StatefulWidget {
@@ -63,6 +96,13 @@ class _SecuredViewAppState extends State<SecuredViewApp> with WidgetsBindingObse
       _enforceFromRoot(syncServer: true);
     } else if (state == AppLifecycleState.paused) {
       // Still enforce local clock while backgrounded via residual timer
+    } else if (state == AppLifecycleState.detached) {
+      // Desktop window closing = app exiting. Drop the tunnel with us so
+      // no unmanaged tunnel outlives the process (nobody would enforce
+      // entitlement on it). Reopen/autostart reconnects cleanly.
+      try {
+        unawaited(context.read<VPNService>().shutdownTunnel());
+      } catch (_) {}
     }
   }
 
