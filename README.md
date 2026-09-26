@@ -52,7 +52,7 @@ cd usque && CGO_ENABLED=0 go build -o securedview/linux/bundled/usque .
 ## Build Instructions
 
 ```bash
-cd WarpVPN
+cd SecuredViewVPN
 flutter pub get
 
 # Android

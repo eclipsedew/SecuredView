@@ -39,7 +39,7 @@ Render issues TLS automatically after verify. App `apiBases` prefers `https://se
 ## Legacy Vercel rewrites (optional)
 
 ```bash
-python3 ~/WarpVPN/scripts/sync_meridian_rewrite.py \
+python3 ~/SecuredViewVPN/scripts/sync_meridian_rewrite.py \
   --origin https://securedview-api.onrender.com \
   --deploy
 ```
