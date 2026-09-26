@@ -2,7 +2,9 @@
 import re
 import secrets
 from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from clientip import client_ip
 from database import get_db, trial_ip_key
 from models import (
     Account, Device, TrialClaim, FREE_MAX_DEVICES, PREMIUM_MAX_DEVICES,
@@ -13,7 +15,8 @@ from schemas import (
 )
 from auth import (
     hash_pin, verify_pin, create_access_token, get_current_account,
-    _is_locked_out, _record_failed_login, _clear_failed_logins
+    _is_locked_out, _record_failed_login, _clear_failed_logins,
+    is_modern_pin_hash,
 )
 from datetime import datetime, timedelta, timezone
 from limiter import limiter
@@ -60,29 +63,7 @@ def _ensure_utc(dt):
     return dt
 
 
-def _premium_active(account: Account) -> bool:
-    now = datetime.now(timezone.utc)
-    exp = _ensure_utc(account.premium_expires_at)
-    return bool(account.is_premium and exp and exp > now)
-
-
-def _try_grant_trial(db: Session, account: Account, device_key: str, ip_key: str,
-                     fingerprint: str | None = None, email: str | None = None) -> bool:
-    """One free trial per hardware fingerprint (or device_id fallback) — forever.
-
-    Trial clock is EXACT: started_at = account.created_at,
-    ends_at = created_at + TRIAL_DAYS. After that → no access until paid plan.
-    Returns True if this registration received a new trial.
-    """
-    keys = [device_key]
-    if fingerprint:
-        keys.append(fingerprint)
-    claimed = db.query(TrialClaim).filter(TrialClaim.device_key.in_(keys)).first()
-    if not claimed and fingerprint:
-        claimed = db.query(TrialClaim).filter(TrialClaim.fingerprint == fingerprint).first()
-    if claimed:
-        return False
-
+def _ip_recent_count(db: Session, ip_key: str) -> int:
     day_ago = datetime.now(timezone.utc) - timedelta(days=1)
     recent = 0
     for row in db.query(TrialClaim).filter(TrialClaim.ip_key == ip_key).all():
@@ -93,20 +74,58 @@ def _try_grant_trial(db: Session, account: Account, device_key: str, ip_key: str
             at = at.replace(tzinfo=timezone.utc)
         if at >= day_ago:
             recent += 1
-    if recent >= TRIAL_IP_PER_DAY:
-        return False
+    return recent
+
+
+def _device_already_claimed(db: Session, device_id: str, fingerprint: str | None):
+    keys = [device_id]
+    if fingerprint:
+        keys.append(fingerprint)
+    claimed = db.query(TrialClaim).filter(TrialClaim.device_key.in_(keys)).first()
+    if not claimed and fingerprint:
+        claimed = db.query(TrialClaim).filter(TrialClaim.fingerprint == fingerprint).first()
+    return claimed
+
+
+def _try_grant_trial(db: Session, account: Account, device_id: str, ip_key: str,
+                     fingerprint: str | None = None, email: str | None = None) -> tuple[bool, bool]:
+    """One free trial per hardware fingerprint (or device_id fallback) — forever.
+
+    Trial clock is EXACT: started_at = account.created_at,
+    ends_at = created_at + TRIAL_DAYS. After that → no access until paid plan.
+    Returns (granted, already_claimed):
+      granted        → a new trial was armed now
+      already_claimed → this hardware already burned its trial elsewhere
+                        (caller should permanently flag trial_eligible=False)
+    """
+    if _device_already_claimed(db, device_id, fingerprint):
+        return False, True
+
+    if _ip_recent_count(db, ip_key) >= TRIAL_IP_PER_DAY:
+        return False, False  # soft IP cap — not a permanent ban
 
     ends = start_trial_from_creation(db, account)
+    claimed_at = ensure_utc(account.trial_started_at) or datetime.now(timezone.utc)
     db.add(TrialClaim(
-        device_key=device_key,
+        device_key=device_id,
         ip_key=ip_key,
         account_id=account.id,
         email=email,
         fingerprint=fingerprint,
-        claimed_at=ensure_utc(account.trial_started_at) or datetime.now(timezone.utc),
+        claimed_at=claimed_at,
     ))
+    if fingerprint and fingerprint != device_id:
+        # Both keys must block — claim under fingerprint too.
+        db.add(TrialClaim(
+            device_key=fingerprint,
+            ip_key=ip_key,
+            account_id=account.id,
+            email=email,
+            fingerprint=fingerprint,
+            claimed_at=claimed_at,
+        ))
     _ = ends
-    return True
+    return True, False
 
 
 @router.post("/register", response_model=TokenResponse)
@@ -121,6 +140,20 @@ def register(request: Request, req: AccountCreate, db: Session = Depends(get_db)
     existing_device = db.query(Device).filter(
         Device.device_id == req.device_id,
     ).order_by(Device.is_active.desc()).first()
+
+    if existing_device is not None:
+        # Possession guard: device_id is client-chosen — only the same
+        # hardware (fingerprint match with the current owner) may take over
+        # a row that belongs to a different account.
+        owner = db.query(Account).filter(
+            Account.id == existing_device.account_id
+        ).first()
+        owner_fp = owner.device_fingerprint if owner else None
+        if owner_fp and owner_fp != req.fingerprint:
+            raise HTTPException(
+                status_code=409,
+                detail="Device is already registered to another account",
+            )
 
     ip_key = trial_ip_key(request)
     device_name = (req.device_name[:128]
@@ -153,7 +186,12 @@ def register(request: Request, req: AccountCreate, db: Session = Depends(get_db)
     # Trial requires hardware fingerprint — bare random device_ids cannot farm trials.
     if not req.fingerprint:
         account.trial_eligible = False  # cannot verify hardware → never trial
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(
+                status_code=409, detail="Signup conflict. Please try again.")
         db.refresh(account)
         token = create_access_token(account.id)
         return TokenResponse(
@@ -166,24 +204,21 @@ def register(request: Request, req: AccountCreate, db: Session = Depends(get_db)
             billing_ready=False,
         )
 
-    claim_key = req.fingerprint or req.device_id
-    granted = _try_grant_trial(
-        db, account, claim_key, ip_key,
+    granted, device_claimed = _try_grant_trial(
+        db, account, req.device_id, ip_key,
         fingerprint=req.fingerprint,
     )
-    # Also claim under raw device_id if fingerprint was the key (both must block)
-    if granted and req.fingerprint and req.fingerprint != req.device_id:
-        db.add(TrialClaim(
-            device_key=req.device_id,
-            ip_key=ip_key,
-            account_id=account.id,
-            fingerprint=req.fingerprint,
-            claimed_at=ensure_utc(account.trial_started_at) or datetime.now(timezone.utc),
-        ))
-    # Signup on a device that already burned its trial (or IP-capped) → this
-    # account is permanently trial-ineligible, on ANY device it logs in from.
-    account.trial_eligible = bool(granted)
-    db.commit()
+    # Permanent ban ONLY when this hardware already burned a trial elsewhere.
+    # An IP that is merely over today's soft cap stays eligible — it may arm
+    # on a later day / first login.
+    account.trial_eligible = not device_claimed
+    try:
+        db.commit()
+    except IntegrityError:
+        # Lost a trial-ledger race (unique device_key) — no double trial.
+        db.rollback()
+        raise HTTPException(
+            status_code=409, detail="Signup conflict. Please try again.")
     db.refresh(account)
 
     token = create_access_token(account.id)
@@ -202,18 +237,48 @@ def register(request: Request, req: AccountCreate, db: Session = Depends(get_db)
 @limiter.limit("10/minute")
 def login(request: Request, req: AccountLogin, db: Session = Depends(get_db)):
     """Login with account ID + PIN. Runs due auto-bill before returning status."""
-    if _is_locked_out(req.account_id):
+    _ip = client_ip(request)
+    _lock = f"{req.account_id}@{_ip}"
+    if _is_locked_out(_lock):
         raise HTTPException(status_code=429, detail="Too many attempts. Try again later.")
 
     account = db.query(Account).filter(Account.id == req.account_id).first()
     if not account:
-        _record_failed_login(req.account_id)
+        _record_failed_login(_lock)
         raise HTTPException(status_code=401, detail="Invalid credentials")
     if not verify_pin(req.pin, account.pin_hash):
-        _record_failed_login(req.account_id)
+        _record_failed_login(_lock)
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    _clear_failed_logins(req.account_id)
+    _clear_failed_logins(_lock)
+
+    # Lazy upgrade: legacy single-round SHA-256 hashes → scrypt on first login.
+    if not is_modern_pin_hash(account.pin_hash):
+        account.pin_hash = hash_pin(req.pin)
+
+    # Cross-account possession guard BEFORE any side effects (trial arming):
+    # device_id is client-chosen, so an existing row under another account
+    # may only be taken over by the same hardware (fingerprint match).
+    # Reads only scalars — safe to raise before the billing commit below.
+    _own_row = db.query(Device.id).filter(
+        Device.account_id == account.id,
+        Device.device_id == req.device_id,
+    ).first() is not None
+    if not _own_row:
+        _cross = db.query(Device.id, Device.account_id).filter(
+            Device.device_id == req.device_id,
+            Device.is_active == True,
+            Device.account_id != account.id,
+        ).first()
+        if _cross:
+            owner_fp = db.query(Account.device_fingerprint).filter(
+                Account.id == _cross[1]
+            ).scalar()
+            if owner_fp and owner_fp != req.fingerprint:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Device is already registered to another account",
+                )
 
     # Exact-clock: trial/paid end → access cut (no charge, no free tier)
     try:
@@ -224,8 +289,9 @@ def login(request: Request, req: AccountLogin, db: Session = Depends(get_db)):
 
     # Admin-created trial accounts (normal=3d, special=15d): arm the trial
     # clock on FIRST login — days don't burn while the account sits unused.
-    # Accounts signed up on an already-trial-burned device are flagged
-    # trial_eligible=False at registration and never arm, on any device.
+    # Never arms when: flagged ineligible at registration, this hardware
+    # already sealed a trial on another account (ledger), or this IP is over
+    # today's soft free-trial cap (retried on a later login).
     if (
         account.account_type in ("normal", "special")
         and not account.is_trial
@@ -233,29 +299,39 @@ def login(request: Request, req: AccountLogin, db: Session = Depends(get_db)):
         and not account.trial_started_at
         and account.trial_eligible is not False
     ):
-        trial_days = TRIAL_DAYS if account.account_type == "normal" else SPECIAL_TRIAL_DAYS
-        _now = datetime.now(timezone.utc)
-        account.trial_started_at = _now
-        account.trial_ends_at = _now + timedelta(days=trial_days)
-        account.is_trial = True
-        account.is_premium = True
-        account.premium_expires_at = account.trial_ends_at
-        # Seal this device in the ledger so it can't mint trials elsewhere.
-        _ip = trial_ip_key(request)
-        db.add(TrialClaim(
-            device_key=req.device_id, ip_key=_ip, account_id=account.id,
-            fingerprint=req.fingerprint, claimed_at=_now,
-        ))
-        if req.fingerprint and req.fingerprint != req.device_id:
+        if _device_already_claimed(db, req.device_id, req.fingerprint):
+            # Hardware burned a trial elsewhere → this account never arms.
+            account.trial_eligible = False
+            db.commit()
+        elif _ip_recent_count(db, trial_ip_key(request)) < TRIAL_IP_PER_DAY:
+            trial_days = TRIAL_DAYS if account.account_type == "normal" else SPECIAL_TRIAL_DAYS
+            _now = datetime.now(timezone.utc)
+            account.trial_started_at = _now
+            account.trial_ends_at = _now + timedelta(days=trial_days)
+            account.is_trial = True
+            account.is_premium = True
+            account.premium_expires_at = account.trial_ends_at
+            # Seal this device in the ledger so it can't mint trials elsewhere.
+            _ip = trial_ip_key(request)
             db.add(TrialClaim(
-                device_key=req.fingerprint, ip_key=_ip, account_id=account.id,
+                device_key=req.device_id, ip_key=_ip, account_id=account.id,
                 fingerprint=req.fingerprint, claimed_at=_now,
             ))
-        db.commit()
+            if req.fingerprint and req.fingerprint != req.device_id:
+                db.add(TrialClaim(
+                    device_key=req.fingerprint, ip_key=_ip, account_id=account.id,
+                    fingerprint=req.fingerprint, claimed_at=_now,
+                ))
+            try:
+                db.commit()
+            except IntegrityError:
+                # Lost a ledger race — leave unarmed, never 500.
+                db.rollback()
         db.refresh(account)
 
     max_devs = _max_devices(account)
 
+    # Fresh queries — the billing commit/rollback above can detach instances.
     existing = db.query(Device).filter(
         Device.account_id == account.id,
         Device.device_id == req.device_id,
@@ -280,22 +356,23 @@ def login(request: Request, req: AccountLogin, db: Session = Depends(get_db)):
                 detail="Device limit reached",
             )
 
-        other_account_device = db.query(Device).filter(
+        cross_device = db.query(Device).filter(
             Device.device_id == req.device_id,
             Device.is_active == True,
             Device.account_id != account.id,
         ).first()
-        if other_account_device:
+        if cross_device:
             # Device possession wins (same rule as registration): the row
             # follows whoever is physically on this machine. Lets one human
             # switch accounts on a single device (user ↔ admin) — the old
-            # 409 locked the admin out of their own box.
-            other_account_device.account_id = account.id
-            other_account_device.last_seen = datetime.now(timezone.utc)
-            other_account_device.is_active = True
+            # 409 locked the admin out of their own box. Guard above already
+            # proved the fingerprint matches the previous owner.
+            cross_device.account_id = account.id
+            cross_device.last_seen = datetime.now(timezone.utc)
+            cross_device.is_active = True
             if req.device_name:
-                other_account_device.device_name = req.device_name[:128]
-            other_account_device.platform = req.platform[:PLATFORM_MAX_LENGTH]
+                cross_device.device_name = req.device_name[:128]
+            cross_device.platform = req.platform[:PLATFORM_MAX_LENGTH]
             if req.fingerprint and not account.device_fingerprint:
                 account.device_fingerprint = req.fingerprint
         else:
@@ -307,7 +384,12 @@ def login(request: Request, req: AccountLogin, db: Session = Depends(get_db)):
             )
             db.add(device)
 
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=409, detail="Login conflict. Please try again.")
     db.refresh(account)
 
     active = bool(account.is_premium and (

@@ -10,3 +10,6 @@ __pycache__/
 securevpn.db*
 .git
 .github
+# Account snapshot (PIN hashes) must never ship inside the image — prod
+# seeds from the SEED_DATA env var only.
+seed.json

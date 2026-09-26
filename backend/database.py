@@ -35,6 +35,14 @@ else:
         pool_recycle=300,
     )
 
+    @event.listens_for(engine, "connect")
+    def _set_pg_utc(dbapi_connection, connection_record):
+        # Render Postgres runs in a non-UTC timezone by default; naive
+        # datetime.now() values would drift against NOW()-based queries.
+        cursor = dbapi_connection.cursor()
+        cursor.execute("SET TIME ZONE 'UTC'")
+        cursor.close()
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
@@ -177,12 +185,11 @@ def seed_admin(account_id: str, pin) -> None:
 
 
 def trial_ip_key(request) -> str:
-    """Stable-enough IP hash for soft rate limits (not a hard identity)."""
+    """Stable-enough IP hash for soft rate limits (not a hard identity).
+
+    Uses the proxy-attested client IP (last X-Forwarded-For hop) — indexing
+    position 0 lets a client spoof any bucket by prepending fake entries.
+    """
     import hashlib
-    ip = "unknown"
-    if request is not None:
-        ip = request.client.host if request.client else "unknown"
-        fwd = request.headers.get("x-forwarded-for", "")
-        if fwd:
-            ip = fwd.split(",")[0].strip()
-    return hashlib.sha256(f"sv-trial:{ip}".encode()).hexdigest()[:64]
+    from clientip import client_ip
+    return hashlib.sha256(f"sv-trial:{client_ip(request)}".encode()).hexdigest()[:64]

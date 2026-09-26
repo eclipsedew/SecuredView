@@ -39,6 +39,11 @@ app = FastAPI(
     title="SecureVPN API",
     description="Backend API for SecuredView - Cloudflare WARP VPN client",
     version="1.0.0",
+    # No public API surface — /docs, /redoc, /openapi.json would map every
+    # endpoint (including admin) for anyone with a browser.
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
 )
 
 app.state.limiter = limiter
@@ -49,16 +54,21 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 # 1. API key middleware — only the official app can call the API
 from middleware import ApiKeyMiddleware, APP_API_KEY
 app.add_middleware(ApiKeyMiddleware)
-print(f"API key loaded: {APP_API_KEY[:8]}...")
+# Never log key material (even a prefix) — log files are often shipped.
+print("API key loaded")
 
 # 2. CORS: explicit origins, no wildcard + credentials
 ENVIRONMENT = os.getenv("ENVIRONMENT", "production")
-ALLOWED_ORIGINS = os.getenv(
-    "ALLOWED_ORIGINS",
-    "https://securedviewvpn.com,https://www.securedviewvpn.com,"
-    "https://meridianglobal.site,https://www.meridianglobal.site,"
-    "http://localhost,http://localhost:8080",
-).split(",")
+ALLOWED_ORIGINS = [
+    o.strip()
+    for o in os.getenv(
+        "ALLOWED_ORIGINS",
+        "https://securedviewvpn.com,https://www.securedviewvpn.com,"
+        "https://meridianglobal.site,https://www.meridianglobal.site,"
+        "http://localhost,http://localhost:8080",
+    ).split(",")
+    if o.strip()
+]
 
 if ENVIRONMENT == "development":
     app.add_middleware(
@@ -84,6 +94,14 @@ MAX_BODY_SIZE = 1 * 1024 * 1024  # 1 MB
 @app.middleware("http")
 async def limit_request_size(request: Request, call_next):
     content_length = request.headers.get("content-length")
+    transfer_encoding = (request.headers.get("transfer-encoding") or "").lower()
+    if "chunked" in transfer_encoding and not content_length:
+        # Chunked bodies bypass the size check above (no Content-Length) —
+        # demand a declared length instead of reading unbounded.
+        return JSONResponse(
+            status_code=411,
+            content={"detail": "Length Required"},
+        )
     try:
         if content_length and int(content_length) > MAX_BODY_SIZE:
             return JSONResponse(
@@ -106,6 +124,8 @@ async def security_headers(request: Request, call_next):
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    # HSTS: Render terminates TLS — force https for a year on this host.
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
 
 
@@ -357,6 +377,10 @@ def seed_from_snapshot():
                 created_at=_parse_dt(a.get("created_at")),
                 is_premium=bool(a.get("is_premium")),
                 premium_expires_at=_parse_dt(a.get("premium_expires_at")),
+                # Snapshot rows predate the dashboard — they are legacy: no
+                # first-login trial arming and no free-tier revival path.
+                account_type="legacy",
+                trial_eligible=False,
             ))
         db.flush()
         for d in data.get("devices", []):

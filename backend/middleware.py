@@ -21,12 +21,11 @@ else:
         pass
 
 # Public API paths (website pages/assets are public by default — see middleware)
+# NOTE: FastAPI docs (/docs, /redoc, /openapi.json) are disabled at app
+# construction — they are not API paths and must never be listed as public.
 PUBLIC_PATHS = {
     "/",
     "/health",
-    "/docs",
-    "/openapi.json",
-    "/redoc",
     "/download",
     "/api/servers/all",
     "/api/premium/plans",

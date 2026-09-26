@@ -50,6 +50,15 @@ def _ps_headers():
     }
 
 
+def _safe_json(resp) -> dict | None:
+    """Parse a gateway response defensively — HTML/empty bodies must not 500."""
+    try:
+        data = resp.json()
+    except Exception:
+        return None
+    return data if isinstance(data, dict) else None
+
+
 class InitializeRequest(BaseModel):
     plan_id: str
     email: str = Field(..., max_length=254)
@@ -159,7 +168,9 @@ def initialize_payment(
             json=payload,
         )
 
-    data = resp.json()
+    data = _safe_json(resp)
+    if data is None:
+        raise HTTPException(status_code=502, detail="Payment gateway error")
     if not data.get("status"):
         raise HTTPException(
             status_code=402,
@@ -255,7 +266,14 @@ def verify_payment(
             headers=_ps_headers(),
         )
 
-    data = resp.json()
+    data = _safe_json(resp)
+    if data is None:
+        return VerifyResponse(
+            success=False,
+            message="Payment gateway error",
+            reference=req.reference,
+            plan_id=req.plan_id,
+        )
     if not data.get("status"):
         return VerifyResponse(
             success=False,
@@ -368,7 +386,7 @@ def cancel_subscription(
                 f"{PAYSTACK_BASE_URL}/subscription/{code}",
                 headers=_ps_headers(),
             )
-            data = resp.json()
+            data = _safe_json(resp) or {}
             email_token = (data.get("data") or {}).get("email_token") if data.get("status") else None
             if email_token:
                 client.post(

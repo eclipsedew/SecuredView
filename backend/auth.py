@@ -58,44 +58,81 @@ ADMIN_PASSWORD = _admin_pass
 security = HTTPBearer(auto_error=False)
 
 # ── Failed login tracking (in-memory) ─────────────────────
+# Keyed "<account>@<ip>": a hostile client can otherwise lock a victim out of
+# their own account just by sending the victim's account id with bad PINs.
 _failed_logins: dict[str, list[float]] = {}
 MAX_LOGIN_ATTEMPTS = 5
 LOGIN_LOCKOUT_SECONDS = 300  # 5 minutes
 
 
-def _is_locked_out(account_id: str) -> bool:
+def _is_locked_out(key: str) -> bool:
     now = datetime.now(timezone.utc).timestamp()
-    attempts = _failed_logins.get(account_id, [])
+    attempts = _failed_logins.get(key, [])
     # Prune old attempts
     attempts = [t for t in attempts if now - t < LOGIN_LOCKOUT_SECONDS]
-    _failed_logins[account_id] = attempts
+    if attempts:
+        _failed_logins[key] = attempts
+    else:
+        _failed_logins.pop(key, None)
     return len(attempts) >= MAX_LOGIN_ATTEMPTS
 
 
-def _record_failed_login(account_id: str):
+def _record_failed_login(key: str):
     now = datetime.now(timezone.utc).timestamp()
-    _failed_logins.setdefault(account_id, []).append(now)
+    _failed_logins.setdefault(key, []).append(now)
+    if len(_failed_logins) > 10000:
+        # Memory cap: drop expired entries everywhere.
+        for k in list(_failed_logins):
+            live = [t for t in _failed_logins[k] if now - t < LOGIN_LOCKOUT_SECONDS]
+            if live:
+                _failed_logins[k] = live
+            else:
+                _failed_logins.pop(k, None)
 
 
-def _clear_failed_logins(account_id: str):
-    _failed_logins.pop(account_id, None)
+def _clear_failed_logins(key: str):
+    _failed_logins.pop(key, None)
 
 
 # ── PIN hashing ───────────────────────────────────────────
+_SCRYPT_N, _SCRYPT_R, _SCRYPT_P = 2 ** 14, 8, 1
+_SCRYPT_MAXMEM = 64 * 1024 * 1024
+
+
 def hash_pin(pin: str) -> str:
-    """Hash a PIN with salt using SHA-256."""
+    """Hash a PIN with salt using scrypt (format: scrypt$n$r$p$salt$dk).
+
+    The previous scheme was a single unsalted-cost SHA-256 — offline brute
+    force of the 4-digit space is instant. Old hashes keep verifying and are
+    transparently upgraded on the next successful login.
+    """
     salt = secrets.token_hex(16)
-    h = hashlib.sha256(f"{salt}:{pin}".encode()).hexdigest()
-    return f"{salt}:{h}"
+    dk = hashlib.scrypt(
+        pin.encode(), salt=bytes.fromhex(salt),
+        n=_SCRYPT_N, r=_SCRYPT_R, p=_SCRYPT_P, dklen=32, maxmem=_SCRYPT_MAXMEM,
+    )
+    return f"scrypt${_SCRYPT_N}${_SCRYPT_R}${_SCRYPT_P}${salt}${dk.hex()}"
+
+
+def is_modern_pin_hash(stored: str) -> bool:
+    return isinstance(stored, str) and stored.startswith("scrypt$")
 
 
 def verify_pin(plain_pin: str, stored: str) -> bool:
-    """Verify a PIN against the salt:hash stored string."""
+    """Verify a PIN; understands both current scrypt and legacy sha256 hashes."""
     try:
+        if is_modern_pin_hash(stored):
+            _, n, r, p, salt_hex, hash_hex = stored.split("$")
+            dk = hashlib.scrypt(
+                plain_pin.encode(), salt=bytes.fromhex(salt_hex),
+                n=int(n), r=int(r), p=int(p),
+                dklen=len(bytes.fromhex(hash_hex)), maxmem=_SCRYPT_MAXMEM,
+            )
+            return secrets.compare_digest(dk.hex(), hash_hex)
         salt, expected_hash = stored.split(":", 1)
         h = hashlib.sha256(f"{salt}:{plain_pin}".encode()).hexdigest()
         return secrets.compare_digest(h, expected_hash)
-    except (ValueError, AttributeError):
+    except (ValueError, AttributeError, TypeError, OverflowError):
         return False
 
 
@@ -153,4 +190,8 @@ def require_auth_or_admin(
 
 
 def verify_admin(username: str, password: str) -> bool:
-    return username == ADMIN_USERNAME and password == ADMIN_PASSWORD
+    # compare_digest: non-constant-time == leaks credential prefix length.
+    return (
+        secrets.compare_digest(username or "", ADMIN_USERNAME or "")
+        and secrets.compare_digest(password or "", ADMIN_PASSWORD or "")
+    )

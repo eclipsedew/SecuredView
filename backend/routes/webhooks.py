@@ -22,12 +22,11 @@ PAYSTACK_SECRET_KEY = os.getenv("PAYSTACK_SECRET_KEY", "")
 
 
 def _verify_signature(raw: bytes, signature: str | None) -> None:
-    env = os.getenv("ENVIRONMENT", "production")
     if not PAYSTACK_SECRET_KEY:
-        # Fail closed in production — unsigned webhooks are forgeable.
-        # Local/dev only may skip when secret is intentionally unset.
-        if env == "development":
-            return
+        # Fail closed everywhere — an "env == development" skip made the
+        # webhook forgeable (grant premium with an unsigned POST) on any
+        # host where the env var was simply forgotten. Configure the secret
+        # locally too (.env) instead of bypassing verification.
         raise HTTPException(status_code=503, detail="Webhook secret not configured")
     if not signature:
         raise HTTPException(status_code=401, detail="Missing x-paystack-signature")
@@ -111,8 +110,15 @@ async def paystack_webhook(request: Request, db: Session = Depends(get_db)):
                 expected = int(plan["price"] * USD_TO_GHS * 100)
                 amount = data.get("amount")
                 currency = data.get("currency")
-                if amount is not None and int(amount) != expected:
-                    return {"status": "ignored", "reason": "amount_mismatch"}
+                if amount is not None:
+                    # int() on arbitrary payload → ValueError → 500 → retry
+                    # storm; treat unparseable amounts as a mismatch.
+                    try:
+                        amount_val = int(amount)
+                    except (TypeError, ValueError):
+                        return {"status": "ignored", "reason": "bad_amount"}
+                    if amount_val != expected:
+                        return {"status": "ignored", "reason": "amount_mismatch"}
                 if currency and currency != PAYSTACK_CURRENCY:
                     return {"status": "ignored", "reason": "currency_mismatch"}
             customer = data.get("customer") or {}

@@ -73,38 +73,45 @@ def _account_info(acc: Account, db: Session) -> AccountInfo:
     )
 
 
-# Admin login brute-force tracking
+# Admin login brute-force tracking — keyed "<username>@<ip>" so an attacker
+# cannot lock the admin out of the dashboard by spraying bad passwords from
+# their own machine (they only lock their own key).
 _admin_failed_logins: dict[str, list[float]] = {}
 ADMIN_MAX_ATTEMPTS = 5
 ADMIN_LOCKOUT_SECONDS = 600  # 10 minutes
 
 
-def _admin_is_locked_out(username: str) -> bool:
+def _admin_is_locked_out(key: str) -> bool:
     now = datetime.now(timezone.utc).timestamp()
-    attempts = _admin_failed_logins.get(username, [])
+    attempts = _admin_failed_logins.get(key, [])
     attempts = [t for t in attempts if now - t < ADMIN_LOCKOUT_SECONDS]
-    _admin_failed_logins[username] = attempts
+    if attempts:
+        _admin_failed_logins[key] = attempts
+    else:
+        _admin_failed_logins.pop(key, None)
     return len(attempts) >= ADMIN_MAX_ATTEMPTS
 
 
-def _admin_record_failed(username: str):
+def _admin_record_failed(key: str):
     now = datetime.now(timezone.utc).timestamp()
-    _admin_failed_logins.setdefault(username, []).append(now)
+    _admin_failed_logins.setdefault(key, []).append(now)
 
 
 @router.post("/login", response_model=TokenResponse)
 @limiter.limit("5/minute")
 def admin_login(request: Request, req: AdminLogin):
     """Admin login with brute-force protection."""
-    if _admin_is_locked_out(req.username):
+    from clientip import client_ip
+    _lock = f"{req.username}@{client_ip(request)}"
+    if _admin_is_locked_out(_lock):
         raise HTTPException(status_code=429, detail="Too many attempts. Try again later.")
 
     if not verify_admin(req.username, req.password):
-        _admin_record_failed(req.username)
+        _admin_record_failed(_lock)
         raise HTTPException(status_code=401, detail="Invalid admin credentials")
 
     # Clear on success
-    _admin_failed_logins.pop(req.username, None)
+    _admin_failed_logins.pop(_lock, None)
     token = create_access_token("__admin__")
     return TokenResponse(
         access_token=token,

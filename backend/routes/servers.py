@@ -5,9 +5,39 @@ from database import get_db
 from models import Account, Server
 from schemas import ServerInfo, ServerPublic, ServerCreate, ServerUpdate
 from auth import get_current_account, require_auth_or_admin
+from billing import ensure_utc, run_due_billing
 from datetime import datetime, timezone
 
 router = APIRouter(prefix="/api/servers", tags=["servers"])
+
+
+def require_entitlement(
+    account: Account = Depends(get_current_account),
+    db: Session = Depends(get_db),
+) -> Account:
+    """Server-side gate: no free connections — trial or paid plan required.
+
+    The client's premium checks are UX only; this is the enforcement point
+    for every tunnel endpoint (server list + endpoint details). Runs due
+    billing first so an expired trial is cut before we answer.
+    """
+    try:
+        run_due_billing(db, account)
+        db.commit()
+    except Exception:
+        db.rollback()
+        db.refresh(account)
+    exp = ensure_utc(account.premium_expires_at)
+    active = bool(
+        account.is_admin
+        or (account.is_premium and exp and exp > datetime.now(timezone.utc))
+    )
+    if not active:
+        raise HTTPException(
+            status_code=402,
+            detail="Active trial or subscription required",
+        )
+    return account
 
 
 def _require_admin(auth=Depends(require_auth_or_admin)):
@@ -32,10 +62,10 @@ def _server_to_public(s: Server) -> dict:
 @router.get("/", response_model=list[ServerInfo])
 def list_servers(
     tier: str = None,
-    account: Account = Depends(get_current_account),
+    account: Account = Depends(require_entitlement),
     db: Session = Depends(get_db),
 ):
-    """List all active servers. Every location requires trial/paid (client enforces)."""
+    """List all active servers. Trial/paid only — enforced server-side (402)."""
     query = db.query(Server).filter(Server.is_active == True)
     servers = query.order_by(Server.country, Server.name).all()
     return servers
@@ -51,10 +81,11 @@ def list_all_servers_public(db: Session = Depends(get_db)):
 @router.get("/{server_id}", response_model=ServerInfo)
 def get_server(
     server_id: str,
-    account: Account = Depends(get_current_account),
+    account: Account = Depends(require_entitlement),
     db: Session = Depends(get_db),
 ):
     # Auth required — ServerInfo includes ip_address (tunnel endpoint).
+    # Entitlement required — endpoint details are what actually connects.
     server = db.query(Server).filter(Server.id == server_id).first()
     if not server:
         raise HTTPException(status_code=404, detail="Server not found")
