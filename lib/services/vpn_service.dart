@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -19,6 +20,26 @@ class VPNService extends ChangeNotifier {
   bool _restored = false;
   String? _egressIp;
   bool _egressChecking = false;
+
+  /// Desktop byte accounting: OS counter baseline for the current session
+  /// (first sample after connect = 0). Totals are session deltas.
+  ({int rx, int tx})? _netSampleBase;
+  bool _winStatsBusy = false;
+  DateTime? _winNextStatsAt;
+  String? _winTunName;
+
+  /// Auto-connect after boot/launch: network and warp-svc may not be ready
+  /// on the first attempt — retry with backoff instead of giving up once.
+  Timer? _autoConnectRetry;
+  int _autoConnectTries = 0;
+
+  /// True when the last verify got a DEFINITIVE server answer (grant or
+  /// denial). False = network/5xx/429 unknown → retrying is meaningful.
+  bool _lastVerifyDefinitive = false;
+
+  /// Set by connect() when it refused because the server DEFINITIVELY said
+  /// no (not because the network was unreachable).
+  bool _connectRefusedDefinitively = false;
 
   /// Parse warp-cli status output to get the exact status word.
   static String _parseWarpStatus(String output) {
@@ -57,7 +78,7 @@ class VPNService extends ChangeNotifier {
   DateTime? _lastConnectTime;
   List<ServerConfig> _servers = [];
   bool _killSwitch = true;
-  bool _autoConnect = false;
+  bool _autoConnect = true;
   String? _error;
   AccountService? _accountService;
   bool _serversLoaded = false;
@@ -209,6 +230,7 @@ class VPNService extends ChangeNotifier {
       if (isConnected || isConnecting) {
         disconnect();
       }
+      _cancelAutoConnectRetry();
       _autoConnectDone = false;
       _sessionHadServerEntitlement = false;
       _verifiedRemainingSec = null;
@@ -226,12 +248,50 @@ class VPNService extends ChangeNotifier {
 
     if (!_autoConnectDone && _autoConnect && _accountService!.hasAccount && isDisconnected) {
       _autoConnectDone = true;
-      Future.delayed(const Duration(seconds: 1), () {
-        if (isDisconnected && _autoConnect && _accountService?.hasAccount == true) {
-          connect();
-        }
-      });
+      // Attempt, and RETRY on failure: at boot the network/warp-svc often
+      // isn't up yet — a single fire-and-forget attempt meant "no
+      // auto-connect after reboot" forever.
+      _scheduleAutoConnectAttempt(delay: const Duration(seconds: 2));
     }
+  }
+
+  void _scheduleAutoConnectAttempt({required Duration delay}) {
+    _autoConnectRetry?.cancel();
+    _autoConnectRetry = Timer(delay, () {
+      unawaited(_runAutoConnect());
+    });
+  }
+
+  void _cancelAutoConnectRetry() {
+    _autoConnectRetry?.cancel();
+    _autoConnectRetry = null;
+    _autoConnectTries = 0;
+  }
+
+  Future<void> _runAutoConnect() async {
+    if (!_autoConnect) return;
+    if (_accountService?.hasAccount != true) return;
+    if (isConnected || isConnecting || isDisconnecting) return;
+    await connect();
+    if (isConnected) {
+      _autoConnectTries = 0;
+      return;
+    }
+    // Server definitively said no entitlement — retrying won't help.
+    if (_connectRefusedDefinitively) {
+      _autoConnectTries = 0;
+      return;
+    }
+    _autoConnectTries++;
+    if (_autoConnectTries > 15) {
+      _autoConnectTries = 0;
+      return;
+    }
+    // 5s early retries, then 20s — covers slow network/warp-svc at boot
+    // without hammering the API.
+    _scheduleAutoConnectAttempt(
+      delay: Duration(seconds: _autoConnectTries <= 3 ? 5 : 20),
+    );
   }
 
   /// Seconds left on the last successful server grant (monotonic countdown).
@@ -302,6 +362,7 @@ class VPNService extends ChangeNotifier {
       // Keep AccountService tier in sync with backend
       await _accountService!.syncPremiumStatus();
       if (status.isPremium && (status.remainingSeconds ?? 0) > 0) {
+        _lastVerifyDefinitive = true;
         _verifiedRemainingSec = status.remainingSeconds;
         _sinceServerVerify
           ..reset()
@@ -309,6 +370,8 @@ class VPNService extends ChangeNotifier {
         _sessionHadServerEntitlement = true;
         return true;
       }
+      // Server answered: not entitled → definitive "no".
+      _lastVerifyDefinitive = true;
       _verifiedRemainingSec = 0;
       _sinceServerVerify.reset();
       return false;
@@ -318,15 +381,18 @@ class VPNService extends ChangeNotifier {
         // Definitive server denial (bad token / no entitlement) — fail
         // closed NOW. Never grant the offline-grace window on an answer
         // that says "no": that was a free tunnel for up to 90s per check.
+        _lastVerifyDefinitive = true;
         _verifiedRemainingSec = 0;
         _sinceServerVerify.reset();
         return false;
       }
       // 429 / 5xx / unreachable host → last grant only within grace.
+      _lastVerifyDefinitive = false;
       return _serverEntitlementLive() &&
           _sinceServerVerify.elapsed < _maxOfflineGrace;
     } catch (_) {
       // Network fail: keep last grant only within grace window
+      _lastVerifyDefinitive = false;
       return _serverEntitlementLive() &&
           _sinceServerVerify.elapsed < _maxOfflineGrace;
     } finally {
@@ -486,6 +552,14 @@ class VPNService extends ChangeNotifier {
         } catch (_) {}
       }
       notifyListeners();
+      // Race guard: prefs can finish loading AFTER updateAccount's first
+      // pass at cold start (autostart after reboot) — if auto-connect never
+      // got its chance, take it now.
+      if (!_autoConnectDone && _autoConnect &&
+          (_accountService?.hasAccount ?? false) && isDisconnected) {
+        _autoConnectDone = true;
+        _scheduleAutoConnectAttempt(delay: const Duration(seconds: 2));
+      }
     } catch (e) {
       // Settings load error — use defaults
     }
@@ -511,10 +585,14 @@ class VPNService extends ChangeNotifier {
       final verified = await _verifyEntitlementWithServer();
       if (!verified || !_serverEntitlementLive()) {
         _state = VPNState.error;
-        _error = 'Trial or subscription required. Subscribe to connect.';
+        _connectRefusedDefinitively = _lastVerifyDefinitive;
+        _error = _connectRefusedDefinitively
+            ? 'Trial or subscription required. Subscribe to connect.'
+            : 'Cannot reach SecuredView yet — check your connection.';
         notifyListeners();
         return;
       }
+      _connectRefusedDefinitively = false;
 
       if (kIsWeb) throw UnsupportedError('VPN not supported on web');
 
@@ -526,7 +604,8 @@ class VPNService extends ChangeNotifier {
 
       _state = VPNState.connected;
       _connectedAt = DateTime.now();
-      _stats = const ConnectionStats();
+      _resetByteCounters();
+      _netSampleBase = null;
       _sessionHadServerEntitlement = _serverEntitlementLive();
       _startTimers();
       _startKillSwitchMonitor();
@@ -537,6 +616,7 @@ class VPNService extends ChangeNotifier {
     } catch (e) {
       _state = VPNState.error;
       _error = e.toString();
+      _connectRefusedDefinitively = false;
       notifyListeners();
     } finally {
       _isConnecting = false;
@@ -545,6 +625,8 @@ class VPNService extends ChangeNotifier {
 
   Future<void> disconnect() async {
     if (_state == VPNState.disconnecting || _state == VPNState.disconnected) return;
+    // Explicit disconnect = user intent: stop any pending auto-connect retry.
+    _cancelAutoConnectRetry();
 
     if (_state == VPNState.error) {
       _state = VPNState.disconnected;
@@ -572,7 +654,8 @@ class VPNService extends ChangeNotifier {
       _sessionHadServerEntitlement = false;
       _state = VPNState.disconnected;
       _connectedAt = null;
-      _stats = const ConnectionStats();
+      _resetByteCounters();
+      _netSampleBase = null;
       _egressIp = null;
       notifyListeners();
     } catch (e) {
@@ -829,7 +912,7 @@ class VPNService extends ChangeNotifier {
                   await _connectMobile();
                   _state = VPNState.connected;
                   _connectedAt = DateTime.now();
-                  _stats = const ConnectionStats();
+                  _resetByteCounters();
                   unawaited(_refreshEgressIp());
                   notifyListeners();
                 } catch (_) {
@@ -841,7 +924,7 @@ class VPNService extends ChangeNotifier {
               } else {
                 _state = VPNState.disconnected;
                 _connectedAt = null;
-                _stats = const ConnectionStats();
+                _resetByteCounters();
                 _stopTimers();
                 notifyListeners();
               }
@@ -876,7 +959,7 @@ class VPNService extends ChangeNotifier {
                 await _connectDesktop();
                 _state = VPNState.connected;
                 _connectedAt = DateTime.now();
-                _stats = const ConnectionStats();
+                _resetByteCounters();
                 notifyListeners();
               } catch (_) {
                 _state = VPNState.disconnected;
@@ -887,7 +970,7 @@ class VPNService extends ChangeNotifier {
             } else {
               _state = VPNState.disconnected;
               _connectedAt = null;
-              _stats = const ConnectionStats();
+              _resetByteCounters();
               _stopTimers();
               notifyListeners();
             }
@@ -923,7 +1006,7 @@ class VPNService extends ChangeNotifier {
           }
           _state = VPNState.connected;
           _connectedAt = DateTime.now();
-          _stats = const ConnectionStats();
+          _resetByteCounters();
           _startTimers();
           _startEntitlementWatch();
           unawaited(_refreshEgressIp());
@@ -974,7 +1057,7 @@ class VPNService extends ChangeNotifier {
           // Kill-switch monitor will revive; surface honest state first.
           _state = VPNState.disconnected;
           _connectedAt = null;
-          _stats = const ConnectionStats();
+          _resetByteCounters();
           _egressIp = null;
           _stopTimers();
           notifyListeners();
@@ -982,7 +1065,7 @@ class VPNService extends ChangeNotifier {
         } else {
           _state = VPNState.disconnected;
           _connectedAt = null;
-          _stats = const ConnectionStats();
+          _resetByteCounters();
           _egressIp = null;
           _stopTimers();
           _stopKillSwitchMonitor();
@@ -1016,7 +1099,7 @@ class VPNService extends ChangeNotifier {
           // still entitled.
           _state = VPNState.disconnected;
           _connectedAt = null;
-          _stats = const ConnectionStats();
+          _resetByteCounters();
           _stopTimers();
           notifyListeners();
           unawaited(_tryReviveAfterDrop());
@@ -1124,22 +1207,153 @@ class VPNService extends ChangeNotifier {
   }
 
   Future<void> _pullNativeStats() async {
-    if (!(Platform.isAndroid || Platform.isIOS)) return;
+    if (kIsWeb || !(isConnected || isConnecting)) return;
     try {
-      final st = await _warp.status().timeout(const Duration(seconds: 1));
-      if (st == null) return;
-      final sent = (st['bytes_sent'] as num?)?.toInt();
-      final recv = (st['bytes_recv'] as num?)?.toInt();
-      if (sent != null && recv != null && (sent > 0 || recv > 0)) {
-        _stats = ConnectionStats(
-          bytesSent: sent,
-          bytesReceived: recv,
-          connectedDuration: _connectedAt != null
-              ? DateTime.now().difference(_connectedAt!)
-              : Duration.zero,
-        );
+      if (Platform.isAndroid || Platform.isIOS) {
+        final st = await _warp.status().timeout(const Duration(seconds: 1));
+        if (st == null) return;
+        final sent = (st['bytes_sent'] as num?)?.toInt();
+        final recv = (st['bytes_recv'] as num?)?.toInt();
+        if (sent != null && recv != null && (sent > 0 || recv > 0)) {
+          _stats = ConnectionStats(
+            bytesSent: sent,
+            bytesReceived: recv,
+            connectedDuration: _connectedAt != null
+                ? DateTime.now().difference(_connectedAt!)
+                : Duration.zero,
+          );
+        }
+        return;
+      }
+      if (Platform.isLinux) {
+        final t = await _linuxIfaceTotals().timeout(const Duration(seconds: 1));
+        if (t != null) _applyNetTotals(tx: t.tx, rx: t.rx);
+        return;
+      }
+      if (Platform.isWindows) {
+        await _winStatsTick();
       }
     } catch (_) {}
+  }
+
+  /// Zero the displayed counters AND the OS-counter baseline so the next
+  /// sample starts counting this session from zero.
+  void _resetByteCounters() {
+    _stats = const ConnectionStats();
+    _netSampleBase = null;
+  }
+
+  /// Apply cumulative OS counters as a session delta (baseline = first
+  /// sample after connect). Guards against counter resets (iface bounce).
+  void _applyNetTotals({required int tx, required int rx}) {
+    final base = _netSampleBase;
+    if (base == null) {
+      _netSampleBase = (rx: rx, tx: tx);
+      return;
+    }
+    int dTx = tx - base.tx;
+    int dRx = rx - base.rx;
+    if (dTx < 0 || dRx < 0) {
+      // Counter reset (interface bounced) — re-baseline.
+      _netSampleBase = (rx: rx, tx: tx);
+      dTx = 0;
+      dRx = 0;
+    }
+    _stats = ConnectionStats(
+      bytesSent: dTx,
+      bytesReceived: dRx,
+      connectedDuration: _connectedAt != null
+          ? DateTime.now().difference(_connectedAt!)
+          : Duration.zero,
+    );
+  }
+
+  /// Totals (rx bytes, tx bytes) for the interface that carries the default
+  /// route — that is the actual traffic flow (warp/usque full-tunnel).
+  Future<({int rx, int tx})?> _linuxIfaceTotals() async {
+    String? iface;
+    int bestMetric = 0x7fffffff;
+    final route = await File('/proc/net/route').readAsString();
+    for (final line in route.split('\n')) {
+      final f = line.split('\t');
+      if (f.length > 3 && f[1] == '00000000') {
+        // Default route (destination 0.0.0.0); must be UP.
+        final flags = int.tryParse(f[3], radix: 16) ?? 0;
+        if ((flags & 0x1) == 0) continue;
+        // Kernel picks the lowest metric — so must we (warp installs its
+        // default route with a better metric than the physical NIC).
+        final metric = (f.length > 6) ? (int.tryParse(f[6]) ?? 0) : 0;
+        if (metric < bestMetric) {
+          bestMetric = metric;
+          iface = f[0];
+        }
+      }
+    }
+    if (iface == null) return null;
+    final dev = await File('/proc/net/dev').readAsString();
+    for (final line in dev.split('\n')) {
+      final i = line.indexOf(':');
+      if (i <= 0) continue;
+      if (line.substring(0, i).trim() != iface) continue;
+      final p = line.substring(i + 1).trim().split(RegExp(r'\s+'));
+      // fields: rx_bytes rx_packets ... (8) tx_bytes ...
+      if (p.length >= 9) {
+        final rx = int.tryParse(p[0]);
+        final tx = int.tryParse(p[8]);
+        if (rx != null && tx != null) return (rx: rx, tx: tx);
+      }
+    }
+    return null;
+  }
+
+  /// Windows: usque TUN adapter counters via PowerShell (locale-proof API,
+  /// exact per-adapter — the TUN carries the whole tunnelled flow).
+  /// Throttled to ~2s with an in-flight guard (PowerShell spawn cost).
+  Future<void> _winStatsTick() async {
+    if (_winStatsBusy) return;
+    final now = DateTime.now();
+    final next = _winNextStatsAt;
+    if (next != null && now.isBefore(next)) return;
+    _winStatsBusy = true;
+    try {
+      final name = _winTunName ??= _resolveWinTunName();
+      final cmd =
+          '\$a = Get-NetAdapterStatistics -Name \'$name\' -ErrorAction SilentlyContinue; '
+          'if (-not \$a) { \$a = Get-NetAdapter | Where-Object { \$_.Name -match "usque|warp" -or \$_.InterfaceDescription -match "wintun" } | Select-Object -First 1 | Get-NetAdapterStatistics }; '
+          'if (\$a) { Write-Output "\$(\$a.SentBytes) \$(\$a.ReceivedBytes)" }';
+      final r = await Process.run(
+        'powershell',
+        ['-NoProfile', '-NonInteractive', '-Command', cmd],
+      ).timeout(const Duration(seconds: 4));
+      final out = r.stdout.toString().trim();
+      final m = RegExp(r'^(\d+)\s+(\d+)').firstMatch(out);
+      if (m != null) {
+        _applyNetTotals(
+          tx: int.parse(m.group(1)!),
+          rx: int.parse(m.group(2)!),
+        );
+      }
+    } catch (_) {
+    } finally {
+      _winStatsBusy = false;
+      _winNextStatsAt = DateTime.now().add(const Duration(seconds: 2));
+    }
+  }
+
+  /// TUN adapter name usque uses (config inbound.settings.name, else the
+  /// compiled-in default "usque").
+  String _resolveWinTunName() {
+    try {
+      final f = File(_usque.configPath);
+      if (f.existsSync()) {
+        final j = jsonDecode(f.readAsStringSync());
+        final s = (j is Map) ? j['inbound'] : null;
+        final st = (s is Map) ? s['settings'] : null;
+        final name = (st is Map) ? st['name'] as String? : null;
+        if (name != null && name.isNotEmpty) return name;
+      }
+    } catch (_) {}
+    return 'usque';
   }
 
   void selectServer(ServerConfig server) {
@@ -1170,6 +1384,13 @@ class VPNService extends ChangeNotifier {
   void setAutoConnect(bool value) {
     _autoConnect = value;
     _saveSetting('autoConnect', value);
+    if (!value) {
+      _cancelAutoConnectRetry();
+    } else if (_accountService?.hasAccount == true && isDisconnected) {
+      // Toggled ON while idle → connect now (with the retry ladder).
+      _autoConnectDone = true;
+      _scheduleAutoConnectAttempt(delay: const Duration(seconds: 1));
+    }
     notifyListeners();
   }
 
@@ -1198,6 +1419,7 @@ class VPNService extends ChangeNotifier {
 
   @override
   void dispose() {
+    _autoConnectRetry?.cancel();
     _stopTimers();
     _stopKillSwitchMonitor();
     _stopEntitlementWatch();
